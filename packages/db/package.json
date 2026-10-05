@@ -15,8 +15,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "generate": "drizzle-kit generate",
-    "migrate": "drizzle-kit migrate"
+    "migrate": "node dist/migrations/runner.js"
   },
   "dependencies": {
     "@workspace/core": "workspace:*",

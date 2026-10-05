@@ -81,3 +81,54 @@ This document records architectural decisions, resolved contradictions, and unve
     - **180-day Default Retention**: Automated nightly purge job cascades across `meetings`, `transcript_segments`, `chunks`, vector embeddings, and raw VTT storage objects.
     - **Strict Data Subject Erasure**: Asynchronous erasure cascading deletes all associated chunks, embeddings, and attachments with cryptographic receipt generation.
     - **Zero Model Training**: Contractual guarantee and technical constraint—customer data is processed only in-context with temperature 0; Bedrock and Anthropic API enterprise terms prohibit model training on customer payloads.
+
+---
+
+## ADR 06: Multi-Tenant Row-Level Security (RLS) & Connection Pool Hygiene
+
+- **Context & Security Goals**:
+  - In a shared-schema multi-tenant architecture, data confidentiality across organizations must be strictly guaranteed. An application bug in an API endpoint must never allow tenant A to read or mutate tenant B's data.
+- **Architectural Implementation**:
+  1. **Restricted Runtime Role**: Applications connect using `workspace_app` (`NOSUPERUSER`, `NOCREATEDB`, `NOCREATEROLE`, `NOBYPASSRLS`). The table owner role is reserved solely for migrations and administrative maintenance.
+  2. **Mandatory & Forced RLS**: All 22 tenant-owned tables execute `ALTER TABLE <table> ENABLE ROW LEVEL SECURITY;` and `ALTER TABLE <table> FORCE ROW LEVEL SECURITY;`.
+  3. **Policy Architecture (Permissive Tenant Baseline + Restrictive Visibility Gates)**:
+     - Each tenant table defines a `PERMISSIVE` tenant policy: `USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid)`.
+     - In PostgreSQL RLS, if no permissive policy exists on a table, default-deny blocks all rows. The tenant policy serves as the single permissive gateway scoped strictly to the session's `app.org_id`.
+     - Tables with sub-organization privacy constraints (`nodes`, `tasks`, `docs`, `doc_versions`, `chunks`) layer an `AS RESTRICTIVE` policy: `(visibility = 'public' OR user is in node_members OR user is org owner/admin)`.
+     - In PostgreSQL, effective access requires `(PERMISSIVE) AND (ALL RESTRICTIVE)`. This mathematically guarantees that private project data can never leak even within an organization, and no cross-org data can ever be read.
+  4. **Connection Pool Hygiene**:
+     - `withTenantContext` sets `set_config('app.org_id', :orgId, true)` (where `is_local = true` scopes the variable strictly to the transaction duration).
+     - Upon transaction commit or rollback, the setting automatically reverts to empty string.
+     - Integration tests prove that when a pooled connection is subsequently reused without setting context, queries return 0 rows (fail closed).
+  5. **Immutability of `org_id`**:
+     - Trigger `prevent_org_id_mutation()` runs `BEFORE UPDATE OF org_id ON tasks, nodes, docs, meetings`.
+     - Any attempt to reassign existing entities across organizations is rejected with an exception.
+
+---
+
+## ADR 07: Entity Invariants, Subtask Depth & Compound Foreign Key Integrity
+
+- **Context & Invariants**:
+  - Entities must maintain strict relational integrity across organizations without orphan or cross-tenant references.
+  - Tasks must support at most one level of subtasks, prevent self-parenting, and ensure subtasks belong to the same project as their parent.
+- **Architectural Implementation**:
+  1. **Application-Owned UUIDv7**:
+     - Schema tables use UUIDv7 with time-ordered monotonic prefixes.
+     - PL/pgSQL function `uuid_generate_v7()` provides native database defaults, while `@workspace/core` provides TypeScript generator `generateUuidV7()`.
+  2. **Compound Foreign Keys for Multi-Tenancy**:
+     - Instead of naive single-column foreign keys, child tables enforce compound foreign keys:
+       - `tasks`: `FOREIGN KEY (org_id, project_id) REFERENCES nodes(org_id, id)`
+       - `node_members`: `FOREIGN KEY (org_id, node_id) REFERENCES nodes(org_id, id)` and `FOREIGN KEY (org_id, user_id) REFERENCES memberships(org_id, user_id)`
+       - `doc_versions`: `FOREIGN KEY (org_id, doc_id) REFERENCES docs(org_id, id)`
+     - This makes cross-tenant foreign key relationships structurally impossible at the database engine level.
+  3. **Subtask Hierarchy Guarantees**:
+     - Compound foreign key `FOREIGN KEY (org_id, project_id, parent_task_id) REFERENCES tasks(org_id, project_id, id)` guarantees subtasks belong to the same organization AND project as their parent task.
+     - Check constraint `chk_task_no_self_parent CHECK (parent_task_id IS NULL OR parent_task_id != id)` prevents self-parenting.
+     - Trigger `check_subtask_hierarchy()` verifies that parent tasks are not themselves subtasks, and that parents with subtasks cannot be converted into subtasks, enforcing a strict 1-level tree depth.
+  4. **Date vs. Timestamp Distinction**:
+     - Deadlines (`due_date`, `suggested_due`) are stored as `date` (date-only) without timestamp conversion.
+     - Creation, modification, and meeting start times use `timestamptz` (stored in UTC).
+  5. **Hybrid Search & Vector Dimensions**:
+     - `chunks` table integrates PostgreSQL `tsvector` generated column (`to_tsvector('english', content)`) with GIN index.
+     - High-dimensional vector column `embedding vector(1024)` indexed with HNSW cosine distance (`vector_cosine_ops`), matching Amazon Titan Text Embeddings V2 baseline.
+

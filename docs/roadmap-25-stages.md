@@ -4,7 +4,7 @@ This document outlines the complete 25-stage engineering implementation roadmap 
 
 ---
 
-### Stage 1: Foundation (Current Stage)
+### Stage 1: Foundation (Completed)
 - Monorepo structure (`apps/web`, `apps/api`, `apps/worker`, `apps/lambdas`, `packages/core`, `packages/adapters`, `packages/db`, `packages/prompts`, `packages/evals`, `infra`, `docs`).
 - Strict TypeScript configuration, root scripts for dev/build/test/lint/typecheck.
 - Port contracts (`Queue`, `Realtime`, `LLM`, `BlobStore`, `Auth`) with typed job names, events, and structured LLM schemas.
@@ -16,15 +16,21 @@ This document outlines the complete 25-stage engineering implementation roadmap 
 
 ---
 
-### Stage 2: Database Isolation & Multi-Tenancy
-- Drizzle schema definitions for all core entities: `orgs`, `users`, `memberships`, `nodes`, `node_members`, `tasks`, `meetings`, `transcript_segments`, `meeting_notes`, `action_items`, `docs`, `doc_versions`, `comments`, `notifications`, `chunks`, `integrations`, `outbox`, `activity_log`.
-- PostgreSQL Row-Level Security (RLS) policies on every tenant table keyed by `org_id`.
-- Transaction-scoped tenant context helper (`SET LOCAL app.org_id = :org_id`).
-- Automated multi-tenancy test harness validating cross-org isolation and zero data leakage.
+### Stage 2: Database Isolation & Multi-Tenancy (Completed)
+- Typed Drizzle definitions and versioned SQL migration (`0001_initial_schema.sql`) for all 22 entities: `orgs`, `users`, `memberships`, `nodes`, `node_members`, `tasks`, `labels`, `task_labels`, `project_key_counters`, `meetings`, `transcript_segments`, `meeting_notes`, `action_items`, `docs`, `doc_versions`, `comments`, `notifications`, `chunks`, `integrations`, `outbox`, `activity_log`, `invitations`.
+- Application-owned UUIDv7 timestamp-ordered IDs (`uuid_generate_v7()` in SQL and `generateUuidV7()` in `@workspace/core`).
+- PostgreSQL Row-Level Security (RLS) enabled and forced on all tenant tables (`ALTER TABLE ... FORCE ROW LEVEL SECURITY`).
+- Restricted runtime database role (`workspace_app`, non-superuser, no `BYPASSRLS`).
+- Dual-tier policy architecture: Permissive tenant baseline (`org_id = current_setting('app.org_id')`) + Restrictive sub-org gates (`AS RESTRICTIVE` for private nodes, tasks, docs, doc_versions, chunks).
+- Compound foreign keys (`(org_id, parent_id)`) enforcing cross-tenant foreign relationship boundaries at the engine level.
+- Subtask hierarchy invariants: max 1 level of subtasks enforced via PL/pgSQL trigger, self-parenting check constraint, and same-project compound FK.
+- Immutability of tenant ownership enforced via `prevent_org_id_mutation()` audit trigger.
+- Transaction-scoped tenant context helper `withTenantContext` utilizing `set_config(..., is_local=true)` for zero state leakage across pooled connections.
+- Automated real-Postgres test suite (`packages/db/src/__tests__/tenant-isolation.test.ts`, 26 tests) with deterministic fixtures validating all security invariants.
 
 ---
 
-### Stage 3: Authentication & Sessions
+### Stage 3: Authentication & Sessions (Ready for Implementation)
 - Passwordless authentication flows: Google OIDC federated login + email OTP/magic-link.
 - Session cookie management: `httpOnly`, `Secure`, `SameSite=Lax`, 30-day rolling refresh.
 - Token resolution in BFF (`apps/web`) and bearer token validation in Fastify API (`apps/api`).
