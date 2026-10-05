@@ -39,24 +39,24 @@ function LoginForm() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-canvas text-foreground flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
-        <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-indigo-600/20 border border-indigo-500/30 text-indigo-400 font-bold text-xl mb-4">
+        <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-accent/20 border border-accent/40 text-accent font-black text-xl mb-4 shadow-md">
           W
         </div>
-        <h1 className="text-3xl font-bold tracking-tight text-white">Sign in to Workspace</h1>
-        <p className="mt-2 text-sm text-slate-400">
-          AI-native project management and meeting intelligence
+        <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Sign in to Workspace</h1>
+        <p className="mt-2 text-xs text-muted-foreground">
+          AI-native project management, meeting intelligence &amp; evidence-backed tasks
         </p>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-slate-900/80 backdrop-blur-sm border border-slate-800 py-8 px-6 shadow-2xl rounded-2xl sm:px-10">
+        <div className="bg-panel border border-border-subtle py-8 px-6 shadow-2xl rounded-2xl sm:px-10 space-y-6">
           {/* 1. Google OIDC Federated Sign-in */}
           <div>
             <a
               href={`/api/auth/oauth/google${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ''}`}
-              className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-800 hover:border-slate-600 text-sm font-medium text-slate-200 transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl border border-border-subtle bg-panel-elevated hover:bg-panel hover:border-accent/40 text-xs font-semibold text-foreground transition-all shadow-sm focus:outline-none focus:ring-1 focus:ring-accent"
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24">
                 <path
@@ -80,29 +80,29 @@ function LoginForm() {
             </a>
           </div>
 
-          <div className="mt-6 relative">
+          <div className="relative">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-slate-800" />
+              <div className="w-full border-t border-border-subtle" />
             </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-slate-900 px-3 text-slate-500 font-medium">Or continue with email</span>
+            <div className="relative flex justify-center text-[10px] uppercase">
+              <span className="bg-panel px-3 text-muted-foreground font-semibold">Or continue with email</span>
             </div>
           </div>
 
           {/* 2. Passwordless Magic Link Form */}
-          <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
+          <form className="space-y-4" onSubmit={handleSubmit}>
             {error && (
               <div
                 role="alert"
-                className="p-3 rounded-lg bg-red-950/50 border border-red-800 text-red-200 text-sm flex items-start gap-2.5"
+                className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-start gap-2.5"
               >
-                <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+                <AlertCircle className="w-4 h-4 text-rose-400 mt-0.5 shrink-0" />
                 <span>{error}</span>
               </div>
             )}
 
             <div>
-              <label htmlFor="email" className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+              <label htmlFor="email" className="block text-[11px] font-bold text-foreground uppercase tracking-wider mb-1.5">
                 Work Email Address
               </label>
               <div className="relative">
@@ -112,12 +112,11 @@ function LoginForm() {
                   type="email"
                   autoComplete="username"
                   inputMode="email"
-                  enterKeyHint="done"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="alex@company.com"
-                  className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3.5 py-2.5 text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+                  className="w-full rounded-xl bg-panel-inset border border-border-subtle px-3.5 py-2.5 text-foreground placeholder:text-muted-foreground text-xs focus:outline-none focus:ring-1 focus:ring-accent transition-colors"
                 />
               </div>
             </div>
@@ -125,10 +124,10 @@ function LoginForm() {
             <button
               type="submit"
               disabled={loading || !email}
-              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:hover:bg-indigo-600 text-sm font-semibold text-white shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-900"
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-accent hover:opacity-90 disabled:opacity-50 text-xs font-bold text-accent-foreground shadow-md transition-opacity"
             >
               {loading ? (
-                <span>Sending link...</span>
+                <span>Sending magic link...</span>
               ) : (
                 <>
                   <span>Send Magic Link</span>
@@ -138,8 +137,8 @@ function LoginForm() {
             </button>
           </form>
 
-          <div className="mt-6 text-center text-xs text-slate-500">
-            Passwordless & encrypted server sessions. Tokens never touch localStorage.
+          <div className="pt-2 border-t border-border-subtle text-center text-[11px] text-muted-foreground">
+            Passwordless &amp; encrypted server sessions. Tokens never touch localStorage.
           </div>
         </div>
       </div>
@@ -151,8 +150,8 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">
-          <div className="w-8 h-8 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
+        <div className="min-h-screen bg-canvas text-foreground flex items-center justify-center">
+          <div className="w-8 h-8 rounded-full border-2 border-accent border-t-transparent animate-spin" />
         </div>
       }
     >

@@ -3,20 +3,50 @@
 @tailwind utilities;
 
 :root {
-  --background: 0 0% 100%;
-  --foreground: 222.2 84% 4.9%;
-  --card: 0 0% 100%;
-  --card-foreground: 222.2 84% 4.9%;
-  --primary: 222.2 47.4% 11.2%;
-  --primary-foreground: 210 40% 98%;
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
-  --border: 214.3 31.8% 91.4%;
+  --canvas: #0d0f12;
+  --sidebar: #0b0d10;
+  --panel: #14171e;
+  --panel-elevated: #1a1e27;
+  --panel-inset: #101319;
+  --border-subtle: #222633;
+  --border-strong: #2e3446;
+  --accent: #d86dfc;
+  --accent-foreground: #0d0614;
+  --accent-muted: rgba(216, 109, 252, 0.15);
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
   --radius: 0.5rem;
 }
 
 body {
-  color: hsl(var(--foreground));
-  background: hsl(var(--background));
+  color: var(--text-primary);
+  background-color: var(--canvas);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Custom scrollbars matching dark charcoal theme */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #222633;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2e3446;
+}
+
+/* Accessible focus ring using accent */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

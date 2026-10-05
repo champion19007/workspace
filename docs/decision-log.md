@@ -166,3 +166,34 @@ This document records architectural decisions, resolved contradictions, and unve
      - High-entropy invitation tokens generated cryptographically (`crypto.randomBytes(32)`).
      - Raw tokens are delivered in invitation links but stored in PostgreSQL only as SHA-256 hashes (`token_hash`) with a 7-day expiration.
      - Acceptance requires the signed-in user's verified email to match the invited email, preventing invite token hijacking.
+
+---
+
+## 4. Stage 4 — Application Shell & Shared Interface
+
+- **Date**: 2026-10-05
+- **Status**: Accepted & Implemented
+- **Context**: Workspace v1 requires a unified desktop and mobile interface reflecting the dark charcoal aesthetics of reference screenshots `Screenshot (927).png` through `Screenshot (958).png`. The UI must adhere to WCAG 2.1 AA accessibility guidelines, support customizable accent colors, feature persistent navigation, and provide comprehensive views across projects, tasks, boards, teams, documents, meetings, and member management.
+
+- **Key Architectural Decisions**:
+  1. **Charcoal Surfaces & WCAG Contrast Rules**:
+     - Root Canvas: `#0d0f12`, Sidebar: `#0b0d10`, Panels/Cards: `#14171e`, Inset wells: `#101319`, Subtle borders: `#222633`.
+     - Default Accent: `#d86dfc` (orchid/magenta). Relative luminance $\approx 0.33$.
+     - Contrast Analysis: White text (`#ffffff`) on `#d86dfc` yields only $2.78:1$ contrast (fails WCAG AA 4.5:1). Dark charcoal text (`#0d0614`) yields $7.53:1$ (exceeds WCAG AAA 7:1).
+     - Decision: All solid buttons and active pill badges filled with `--accent` dynamically compute and render dark text (`#0d0614`).
+  2. **Dynamic Theming with `localStorage` Persistence**:
+     - `ThemeProvider` manages the `--accent`, `--accent-foreground`, and `--accent-muted` CSS variables.
+     - Automatically recalculates relative luminance and selects the compliant foreground (`#0d0614` vs. `#ffffff`).
+     - Stored under `workspace_accent_color`. Includes presets (`#d86dfc` Orchid, `#38bdf8` Sky, `#34d399` Emerald, `#f43f5e` Rose, `#fbbf24` Amber, `#818cf8` Indigo) and an instant "Reset to Default" action.
+  3. **Shell Navigation & Responsive Layout**:
+     - Desktop persistent sidebar fixed at `320px` (`w-80`) with organization switcher dropdown, `Ctrl+K` command launcher, Personal section (`Home`, `My Tasks`, `Inbox`), Workspace section (`Teams`, `Projects`, `Documents`, `Meetings`, `Members`), Daily Focus reminder card, and bottom user menu pill.
+     - Responsive mobile drawer toggled via top bar hamburger menu button.
+     - Horizontal project view switcher pills: `Dashboard`, `List`, `Board`, `Documents`, `Meetings` with active pill in solid accent.
+  4. **Keyboard Accessibility & Focus Trapping**:
+     - Registered global shortcuts: `Ctrl+K`/`Cmd+K` (Command Launcher), `Shift+?` (Shortcuts dialog), `Escape` (Dismiss modal/drawer), `Shift+D` (Dashboard), `Shift+L` (Task List), `Shift+B` (Kanban Board), `Alt+M` (My Tasks), `Alt+Shift+T` (Teams).
+     - Shortcuts are automatically suppressed when user focus is in input fields, textareas, selects, or contenteditable elements.
+     - Drawers and dialogs manage and restore focus and support Escape cancellation.
+  5. **Feature Scope & P1 Guardrails**:
+     - Preserved future Ask AI layout (Screenshot 943) behind an explicit `P1` preview badge and notification banner, avoiding premature backend complexity before Stage 21.
+     - Strictly avoided introducing unapproved features (e.g. paid billing gateways, calendar integrations, dependency graphs) merely because they appeared in sample screenshots.
+

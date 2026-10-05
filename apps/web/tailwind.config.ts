@@ -10,28 +10,55 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        border: 'hsl(var(--border, 214 32% 91%))',
-        input: 'hsl(var(--input, 214 32% 91%))',
-        ring: 'hsl(var(--ring, 222 84% 4.9%))',
-        background: 'hsl(var(--background, 0 0% 100%))',
-        foreground: 'hsl(var(--foreground, 222 84% 4.9%))',
+        canvas: 'var(--canvas, #0d0f12)',
+        sidebar: 'var(--sidebar, #0b0d10)',
+        panel: {
+          DEFAULT: 'var(--panel, #14171e)',
+          elevated: 'var(--panel-elevated, #1a1e27)',
+          inset: 'var(--panel-inset, #101319)',
+        },
+        'border-subtle': 'var(--border-subtle, #222633)',
+        'border-strong': 'var(--border-strong, #2e3446)',
+        accent: {
+          DEFAULT: 'var(--accent, #d86dfc)',
+          foreground: 'var(--accent-foreground, #0d0614)',
+          muted: 'var(--accent-muted, rgba(216, 109, 252, 0.15))',
+        },
+        // Standard semantic mapping
+        border: 'var(--border-subtle, #222633)',
+        input: 'var(--border-strong, #2e3446)',
+        ring: 'var(--accent, #d86dfc)',
+        background: 'var(--canvas, #0d0f12)',
+        foreground: 'var(--text-primary, #f8fafc)',
         primary: {
-          DEFAULT: 'hsl(var(--primary, 222 47% 11%))',
-          foreground: 'hsl(var(--primary-foreground, 210 40% 98%))',
+          DEFAULT: 'var(--accent, #d86dfc)',
+          foreground: 'var(--accent-foreground, #0d0614)',
         },
         muted: {
-          DEFAULT: 'hsl(var(--muted, 210 40% 96.1%))',
-          foreground: 'hsl(var(--muted-foreground, 215.4 16.3% 46.9%))',
+          DEFAULT: 'var(--panel-elevated, #1a1e27)',
+          foreground: 'var(--text-secondary, #94a3b8)',
         },
         card: {
-          DEFAULT: 'hsl(var(--card, 0 0% 100%))',
-          foreground: 'hsl(var(--card-foreground, 222 84% 4.9%))',
+          DEFAULT: 'var(--panel, #14171e)',
+          foreground: 'var(--text-primary, #f8fafc)',
         },
       },
       borderRadius: {
         lg: 'var(--radius, 0.5rem)',
         md: 'calc(var(--radius, 0.5rem) - 2px)',
         sm: 'calc(var(--radius, 0.5rem) - 4px)',
+      },
+      fontFamily: {
+        sans: [
+          'Inter',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          '"Segoe UI"',
+          'Roboto',
+          'Helvetica',
+          'Arial',
+          'sans-serif',
+        ],
       },
     },
   },

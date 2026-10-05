@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { ThemeProvider } from '../components/theme-provider';
 
 export const metadata: Metadata = {
   title: 'Workspace v1 — Platform Foundation',
@@ -12,8 +13,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className="min-h-screen bg-slate-50 antialiased">{children}</body>
+    <html lang="en" className="dark">
+      <body className="min-h-screen bg-canvas text-foreground antialiased selection:bg-accent selection:text-accent-foreground">
+        <ThemeProvider>{children}</ThemeProvider>
+      </body>
     </html>
   );
 }
