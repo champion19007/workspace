@@ -1,0 +1,29 @@
+{
+  "name": "workspace-v1-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@12.9.1",
+  "scripts": {
+    "dev": "pnpm --parallel -r run dev",
+    "dev:api": "pnpm --filter @workspace/api run dev",
+    "dev:worker": "pnpm --filter @workspace/worker run dev",
+    "dev:web": "pnpm --filter @workspace/web run dev",
+    "build": "pnpm -r run build",
+    "typecheck": "pnpm -r run typecheck",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:contracts": "vitest run --testNamePattern contract",
+    "test:arch": "vitest run packages/core/src/__tests__/architecture.test.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.21.0",
+    "@types/node": "^22.13.5",
+    "eslint": "^9.21.0",
+    "globals": "^16.0.0",
+    "prettier": "^3.5.2",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.24.1",
+    "vitest": "^3.0.7"
+  }
+}

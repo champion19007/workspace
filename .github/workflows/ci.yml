@@ -1,0 +1,44 @@
+name: Foundation CI Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  foundation-checks:
+    name: Lint, Typecheck, Test, and Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.9.1
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint Repository (Enforces Core Import Boundary)
+        run: pnpm run lint
+
+      - name: Verify Architectural Boundaries (Vitest AST Scan)
+        run: pnpm run test:arch
+
+      - name: Strict TypeScript Compilation
+        run: pnpm run typecheck
+
+      - name: Run Unit & Contract Tests
+        run: pnpm run test
+
+      - name: Build All Workspaces
+        run: pnpm run build
