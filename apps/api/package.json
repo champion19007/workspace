@@ -15,8 +15,11 @@
     "@workspace/adapters": "workspace:*",
     "@workspace/core": "workspace:*",
     "@workspace/db": "workspace:*",
+    "drizzle-orm": "^0.39.3",
     "fastify": "^5.2.1",
-    "pino": "^9.6.0"
+    "fastify-plugin": "^6.0.0",
+    "pino": "^9.6.0",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
     "pino-pretty": "^13.0.0",

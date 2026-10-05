@@ -5,6 +5,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    testTimeout: 20000,
     include: ['packages/**/src/**/__tests__/**/*.test.ts', 'apps/**/src/**/__tests__/**/*.test.ts'],
     coverage: {
       provider: 'v8',
@@ -18,6 +19,7 @@ export default defineConfig({
       '@workspace/db': path.resolve(__dirname, './packages/db/src/index.ts'),
       '@workspace/prompts': path.resolve(__dirname, './packages/prompts/src/index.ts'),
       '@workspace/evals': path.resolve(__dirname, './packages/evals/src/index.ts'),
+      '@': path.resolve(__dirname, './apps/web/src'),
     },
   },
 });

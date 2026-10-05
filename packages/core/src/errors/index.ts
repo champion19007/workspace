@@ -31,6 +31,12 @@ export class ForbiddenError extends DomainError {
   }
 }
 
+export class AuthorizationError extends ForbiddenError {
+  constructor(message = 'Insufficient permissions for this action', details?: unknown) {
+    super(message, details);
+  }
+}
+
 export class ConflictError extends DomainError {
   constructor(message = 'Resource conflict or concurrent modification', details?: unknown) {
     super(message, 'CONFLICT', 409, details);

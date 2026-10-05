@@ -30,7 +30,7 @@ This document outlines the complete 25-stage engineering implementation roadmap 
 
 ---
 
-### Stage 3: Authentication & Sessions (Ready for Implementation)
+### Stage 3: Authentication & Sessions (Completed)
 - Passwordless authentication flows: Google OIDC federated login + email OTP/magic-link.
 - Session cookie management: `httpOnly`, `Secure`, `SameSite=Lax`, 30-day rolling refresh.
 - Token resolution in BFF (`apps/web`) and bearer token validation in Fastify API (`apps/api`).
@@ -38,7 +38,7 @@ This document outlines the complete 25-stage engineering implementation roadmap 
 
 ---
 
-### Stage 4: Application Shell & UI Foundations
+### Stage 4: Application Shell & UI Foundations (Ready for Implementation)
 - Next.js application shell using Tailwind CSS and accessible component patterns (`shadcn/ui`).
 - Global layout with responsive sidebar, organization switcher, breadcrumb navigation, and user menu.
 - Dark/light mode theme support, standard loading skeletons, and accessible modal dialogs.

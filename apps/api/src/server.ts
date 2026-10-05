@@ -8,6 +8,8 @@ import {
 } from '@workspace/core';
 import { createAppPorts } from '@workspace/adapters';
 import { createApiClient, checkDatabaseHealth, type Sql } from '@workspace/db';
+import { authPlugin } from './plugins/auth.js';
+import { orgRoutes } from './routes/orgs.js';
 
 export interface ServerInstance {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -28,7 +30,7 @@ export function buildServer(config: AppConfig): ServerInstance {
     keepAliveTimeout: 65_000,
   });
 
-  const { sql } = createApiClient({
+  const { sql, db } = createApiClient({
     connectionString: config.DATABASE_URL,
     maxConnections: config.DB_API_POOL_SIZE,
   });
@@ -40,6 +42,10 @@ export function buildServer(config: AppConfig): ServerInstance {
     origin: config.CORS_ORIGIN,
     credentials: true,
   });
+
+  // Register Auth plugin and Org routes
+  app.register(authPlugin, { config, ports, db });
+  app.register(orgRoutes, { db });
 
   // RFC 9457 Problem Details Error Handler
   app.setErrorHandler((error, request, reply) => {

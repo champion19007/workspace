@@ -1,10 +1,13 @@
+import Link from 'next/link';
+import { LogIn, Building2 } from 'lucide-react';
+
 export default function HomePage() {
   const ports = [
     { name: 'Queue', port: 'QueuePort', archA: 'pg-boss (Supabase)', archB: 'Amazon SQS + DLQ', active: 'Initialized' },
     { name: 'Realtime', port: 'RealtimePort', archA: 'Supabase Realtime Broadcast', archB: 'AWS AppSync Events', active: 'Initialized' },
     { name: 'LLM', port: 'LLMPort', archA: 'Anthropic API (Claude)', archB: 'Amazon Bedrock (India Profile)', active: 'Initialized' },
     { name: 'BlobStore', port: 'BlobStorePort', archA: 'Supabase Storage', archB: 'Amazon S3 (ap-south-1)', active: 'Initialized' },
-    { name: 'Auth', port: 'AuthPort', archA: 'Supabase Auth (Passwordless)', archB: 'Amazon Cognito (Passwordless)', active: 'Initialized' },
+    { name: 'Auth', port: 'AuthPort', archA: 'Supabase Auth (Passwordless)', archB: 'Amazon Cognito (Passwordless)', active: 'Active (Stage 3)' },
   ];
 
   return (
@@ -14,42 +17,55 @@ export default function HomePage() {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold tracking-tight text-slate-900">Workspace v1</h1>
-            <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
-              Stage 1: Foundation Active
+            <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-600/20">
+              Stage 3: Auth &amp; Multi-Tenancy Active
             </span>
           </div>
           <p className="text-sm text-slate-500 mt-1">
-            Solo-build modular monolith baseline (Jan 2027 Production Beta).
+            AI-native project management, passwordless server sessions, and strict tenant isolation.
           </p>
         </div>
-        <div className="text-xs font-mono bg-slate-100 rounded px-3 py-2 text-slate-600 border border-slate-200">
-          Root: apps/web &middot; Node.js v24 &middot; Strict TypeScript
+        <div className="flex items-center gap-3">
+          <Link
+            href="/auth/login"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white shadow-sm transition-colors"
+          >
+            <LogIn className="w-3.5 h-3.5" />
+            <span>Sign In</span>
+          </Link>
+          <Link
+            href="/orgs"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-300 text-xs font-medium text-slate-700 transition-colors"
+          >
+            <Building2 className="w-3.5 h-3.5" />
+            <span>Workspaces</span>
+          </Link>
         </div>
       </header>
 
       {/* Overview Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Architecture Tier</div>
-          <div className="text-lg font-semibold text-slate-800 mt-1">Architecture A &rarr; B Ready</div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Authentication &amp; Sessions</div>
+          <div className="text-lg font-semibold text-slate-800 mt-1">Passwordless + 30-Day Rolling</div>
           <p className="text-xs text-slate-500 mt-2">
-            Shared domain core in <code className="font-mono text-slate-700">packages/core</code> with zero cloud SDK leakage.
+            Google OIDC + email magic link. Server httpOnly cookies, zero tokens in localStorage, session_epoch instant revocation.
           </p>
         </div>
 
         <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Database Engine</div>
-          <div className="text-lg font-semibold text-slate-800 mt-1">PostgreSQL 16</div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Database Multi-Tenancy</div>
+          <div className="text-lg font-semibold text-slate-800 mt-1">Forced PostgreSQL RLS</div>
           <p className="text-xs text-slate-500 mt-2">
-            Dual pools: API transaction pooler (10) + Worker session direct (5). Extensions: <code className="font-mono">ltree</code>, <code className="font-mono">citext</code>, <code className="font-mono">pgvector</code>.
+            22 tenant tables with org_id, transaction-scoped isolation, compound foreign keys, and RBAC matrix.
           </p>
         </div>
 
         <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm">
           <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Roadmap Progress</div>
-          <div className="text-lg font-semibold text-slate-800 mt-1">Stage 1 of 25 (4%)</div>
+          <div className="text-lg font-semibold text-slate-800 mt-1">Stage 3 of 25 (12%)</div>
           <div className="w-full bg-slate-100 rounded-full h-2 mt-3">
-            <div className="bg-blue-600 h-2 rounded-full w-[4%]"></div>
+            <div className="bg-indigo-600 h-2 rounded-full w-[12%]"></div>
           </div>
         </div>
       </div>
@@ -76,7 +92,7 @@ export default function HomePage() {
               {ports.map((p) => (
                 <tr key={p.name} className="hover:bg-slate-50/50">
                   <td className="py-3 px-4 font-medium text-slate-800">{p.name}</td>
-                  <td className="py-3 px-4 font-mono text-xs text-blue-600">{p.port}</td>
+                  <td className="py-3 px-4 font-mono text-xs text-indigo-600">{p.port}</td>
                   <td className="py-3 px-4 text-xs text-slate-600">{p.archA}</td>
                   <td className="py-3 px-4 text-xs text-slate-600">{p.archB}</td>
                   <td className="py-3 px-4">
@@ -91,10 +107,10 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Honest Application State Disclosure */}
+      {/* Truthful Foundation State */}
       <section className="border border-amber-200 bg-amber-50/60 rounded-lg p-5 text-sm text-amber-900">
         <h3 className="font-semibold text-amber-950 flex items-center gap-2">
-          <span>Truthful Foundation State</span>
+          <span>Truthful State Disclosure</span>
         </h3>
         <p className="mt-1 text-xs text-amber-800 leading-relaxed">
           Zero simulated data or mock metrics: in accordance with the specification, Workspace v1 creates no fake meetings,

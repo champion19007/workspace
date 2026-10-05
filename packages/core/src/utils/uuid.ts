@@ -1,4 +1,4 @@
-import crypto from 'node:crypto';
+import crypto from 'crypto';
 
 /**
  * Generates an RFC 9562 compliant UUIDv7 string.

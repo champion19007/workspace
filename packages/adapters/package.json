@@ -18,6 +18,7 @@
     "dev": "tsc --watch"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.117.2",
     "@workspace/core": "workspace:*",
     "zod": "^3.24.2"
   },

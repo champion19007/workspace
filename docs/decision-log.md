@@ -131,4 +131,38 @@ This document records architectural decisions, resolved contradictions, and unve
   5. **Hybrid Search & Vector Dimensions**:
      - `chunks` table integrates PostgreSQL `tsvector` generated column (`to_tsvector('english', content)`) with GIN index.
      - High-dimensional vector column `embedding vector(1024)` indexed with HNSW cosine distance (`vector_cosine_ops`), matching Amazon Titan Text Embeddings V2 baseline.
+---
 
+## ADR 08: Passwordless Authentication, BFF Encrypted Server Sessions & session_epoch Immediate Revocation
+
+- **Context & Requirements**:
+  - Requirement W-1 mandates passwordless authentication with Google OIDC and email magic link for Architecture A (Supabase Auth).
+  - Decision: Magic link is the initial email experience required by W-1; OTP is reserved as a documented alternative. Password authentication is explicitly excluded.
+  - Strict token isolation: identity provider tokens (access tokens, refresh tokens) must never touch browser `localStorage`, `sessionStorage`, client responses, or React page props.
+  - Secure 30-day rolling sessions with explicit expiration, refresh rotation, and immediate revocation upon role demotion or membership termination.
+  - Tenant context must never be trusted from unverified client headers (`x-org-id`), but resolved strictly from authenticated path parameters verified against PostgreSQL memberships.
+
+- **Architectural Implementation**:
+  1. **Backend-For-Frontend (BFF) Session Design**:
+     - The browser holds a single `httpOnly`, `SameSite=Lax`, `Secure` (in production) cookie named `workspace_session`.
+     - The cookie payload is encrypted server-side using Authenticated AES-256-GCM (`@workspace/core` crypto module). The secret never leaves the server runtime.
+     - Decryption failure, ciphertext tampering, or expiration returns `null` immediately.
+  2. **30-Day Rolling Window & Controllable Clock Verification**:
+     - Sessions carry `createdAt` and `expiresAt` timestamps initialized to a 30-day window (`SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000`).
+     - Rolling refresh is triggered automatically when the session is accessed and more than 1 hour has elapsed (`SESSION_ROLLING_REFRESH_THRESHOLD_MS = 3600000`).
+     - Tests verify rolling behavior and expiration using controllable virtual clocks in `ControllableMockAuthAdapter` and `auth-bff.test.ts`.
+  3. **Immediate Revocation via `session_epoch`**:
+     - Each membership row in PostgreSQL carries a `session_epoch` integer (defaults to `1`).
+     - When an administrator modifies a user's role (`updateOrganizationMemberRole`) or removes a member (`removeOrganizationMember`), the database atomically increments `memberships.session_epoch = memberships.session_epoch + 1`.
+     - Fastify's `requireOrgContext` pre-handler compares the caller's session epoch against the active membership table row. If the session epoch is stale, it immediately rejects the request with HTTP 401 `UnauthorizedError ("Session has been revoked or permissions have changed")` within a single request, without waiting for the 30-day cookie or token TTL to expire.
+  4. **BFF-to-API Cryptographic Authentication**:
+     - When the Next.js BFF communicates with Fastify, it signs the internal request with an HMAC-SHA256 signature containing `userId`, `email`, and a millisecond timestamp: `x-workspace-signature`.
+     - Fastify's auth hook validates the HMAC signature using constant-time comparison (`crypto.timingSafeEqual`) and enforces a 5-minute maximum clock skew window to prevent replay attacks.
+  5. **Role Hierarchy & Invariant Enforcement**:
+     - Enforces strict hierarchy: `Owner (4) > Admin (3) > Member (2) > Viewer (1)`.
+     - Admins cannot invite or elevate users to `Owner`, nor demote or remove other Admins.
+     - Atomic database checks prevent demoting or removing the final `Owner` of an organization (`ValidationError: Cannot remove/demote the final Owner`).
+  6. **Secure Invitation Lifecycle**:
+     - High-entropy invitation tokens generated cryptographically (`crypto.randomBytes(32)`).
+     - Raw tokens are delivered in invitation links but stored in PostgreSQL only as SHA-256 hashes (`token_hash`) with a 7-day expiration.
+     - Acceptance requires the signed-in user's verified email to match the invited email, preventing invite token hijacking.

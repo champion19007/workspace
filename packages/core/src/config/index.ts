@@ -20,7 +20,7 @@ export const AppConfigSchema = z.object({
   HOST: z.string().default('0.0.0.0'),
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
   ORIGIN_VERIFY_SECRET: z.string().min(16, 'ORIGIN_VERIFY_SECRET must be at least 16 chars'),
-
+  SESSION_SECRET: z.string().min(16, 'SESSION_SECRET must be at least 16 chars').optional(),
   // Worker Settings
   WORKER_PORT: z.coerce.number().int().min(1024).max(65535).default(8081),
   WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(5),
