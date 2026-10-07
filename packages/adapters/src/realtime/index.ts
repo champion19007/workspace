@@ -1,3 +1,4 @@
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import {
   type RealtimePort,
   type RealtimeEvent,
@@ -32,6 +33,7 @@ export interface SupabaseRealtimeConfig {
 
 export class SupabaseRealtimeAdapter implements RealtimePort {
   public readonly provider = 'supabase';
+  private client: SupabaseClient | null = null;
 
   constructor(private readonly config: SupabaseRealtimeConfig) {
     if (!config.supabaseUrl || !config.serviceRoleKey) {
@@ -43,28 +45,44 @@ export class SupabaseRealtimeAdapter implements RealtimePort {
     }
   }
 
-  async publish<T extends RealtimeEventType>(
-    _channel: string,
-    _event: RealtimeEvent<T>
-  ): Promise<void> {
-    throw new AdapterUnavailableError(
-      'Realtime',
-      'supabase',
-      'Supabase Realtime broadcast client uninitialized.'
-    );
+  private getClient(): SupabaseClient {
+    if (!this.client) {
+      this.client = createClient(this.config.supabaseUrl!, this.config.serviceRoleKey!, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+    }
+    return this.client;
   }
 
-  async mintToken(_userId: string, _orgId: string, _channels: string[]): Promise<string> {
-    throw new AdapterUnavailableError('Realtime', 'supabase', 'JWT token minting uninitialized.');
+  async publish<T extends RealtimeEventType>(
+    channel: string,
+    event: RealtimeEvent<T>
+  ): Promise<void> {
+    const client = this.getClient();
+    const rtChannel = client.channel(channel);
+    await rtChannel.send({
+      type: 'broadcast',
+      event: event.type,
+      payload: event.payload,
+    });
+  }
+
+  async mintToken(userId: string, orgId: string, channels: string[]): Promise<string> {
+    const claims = {
+      sub: userId,
+      org_id: orgId,
+      channels,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    };
+    return Buffer.from(JSON.stringify(claims)).toString('base64url');
   }
 
   async checkHealth(): Promise<{ healthy: boolean; details?: unknown }> {
     return {
-      healthy: false,
+      healthy: Boolean(this.config.supabaseUrl && this.config.serviceRoleKey),
       details: {
         provider: this.provider,
-        error: 'Supabase Realtime uninitialized',
-        configured: Boolean(this.config.supabaseUrl),
+        configured: Boolean(this.config.supabaseUrl && this.config.serviceRoleKey),
       },
     };
   }

@@ -1,8 +1,10 @@
+import { PgBoss } from 'pg-boss';
 import {
   type QueuePort,
   type JobName,
   type JobPayloadMap,
   type QueueEnqueueOptions,
+  type JobHandler,
   JobPayloadSchemas,
   AdapterUnavailableError,
 } from '@workspace/core';
@@ -10,6 +12,7 @@ import {
 export class InMemoryQueueAdapter implements QueuePort {
   public readonly provider = 'in_memory';
   public readonly messages: { job: JobName; data: unknown; options?: QueueEnqueueOptions }[] = [];
+  private handlers: Map<string, JobHandler<any>[]> = new Map();
   private isRunning = false;
 
   async enqueue<T extends JobName>(
@@ -20,6 +23,22 @@ export class InMemoryQueueAdapter implements QueuePort {
     const schema = JobPayloadSchemas[job];
     const validatedData = schema.parse(data);
     this.messages.push({ job, data: validatedData, options });
+
+    const registered = this.handlers.get(job);
+    if (registered && registered.length > 0) {
+      for (const handler of registered) {
+        await handler(validatedData, { id: crypto.randomUUID(), name: job });
+      }
+    }
+  }
+
+  async subscribe<T extends JobName>(
+    job: T,
+    handler: JobHandler<T>
+  ): Promise<void> {
+    const existing = this.handlers.get(job) ?? [];
+    existing.push(handler as JobHandler<any>);
+    this.handlers.set(job, existing);
   }
 
   async checkHealth(): Promise<{ healthy: boolean; details?: unknown }> {
@@ -49,6 +68,8 @@ export interface PgBossConfig {
 
 export class PgBossQueueAdapter implements QueuePort {
   public readonly provider = 'pgboss';
+  private boss: PgBoss | null = null;
+  private isStarted = false;
 
   constructor(private readonly config: PgBossConfig) {
     if (!config.databaseUrl) {
@@ -60,31 +81,93 @@ export class PgBossQueueAdapter implements QueuePort {
     }
   }
 
-  async enqueue<T extends JobName>(
-    _job: T,
-    _data: JobPayloadMap[T],
-    _options?: QueueEnqueueOptions
-  ): Promise<void> {
-    throw new AdapterUnavailableError(
-      'Queue',
-      'pgboss',
-      'pg-boss driver not connected. Set up pg-boss client in Stage 2 with direct database connection.'
-    );
-  }
-
-  async checkHealth(): Promise<{ healthy: boolean; details?: unknown }> {
-    return {
-      healthy: false,
-      details: { provider: this.provider, error: 'pg-boss uninitialized', configPresent: Boolean(this.config.databaseUrl) },
-    };
+  private getBoss(): PgBoss {
+    if (!this.boss) {
+      this.boss = new PgBoss({
+        connectionString: this.config.databaseUrl,
+        schema: this.config.schema ?? 'pgboss',
+      });
+    }
+    return this.boss;
   }
 
   async start(): Promise<void> {
-    throw new AdapterUnavailableError('Queue', 'pgboss', 'Cannot start uninitialized pg-boss queue');
+    const boss = this.getBoss();
+    if (!this.isStarted) {
+      await boss.start();
+      this.isStarted = true;
+    }
   }
 
   async stop(): Promise<void> {
-    // noop
+    if (this.boss && this.isStarted) {
+      await this.boss.stop({ graceful: true });
+      this.isStarted = false;
+    }
+  }
+
+  async enqueue<T extends JobName>(
+    job: T,
+    data: JobPayloadMap[T],
+    options?: QueueEnqueueOptions
+  ): Promise<void> {
+    const schema = JobPayloadSchemas[job];
+    const validatedData = schema.parse(data) as object;
+    const boss = this.getBoss();
+    if (!this.isStarted) {
+      await this.start();
+    }
+
+    const sendOptions: Record<string, unknown> = {};
+    if (options?.dedupeKey) {
+      sendOptions.singletonKey = options.dedupeKey;
+    }
+    if (options?.delayS) {
+      sendOptions.startAfter = options.delayS;
+    }
+    if (options?.priority) {
+      sendOptions.priority = options.priority;
+    }
+
+    await boss.send(job, validatedData, sendOptions as any);
+  }
+
+  async subscribe<T extends JobName>(
+    job: T,
+    handler: JobHandler<T>
+  ): Promise<void> {
+    const boss = this.getBoss();
+    if (!this.isStarted) {
+      await this.start();
+    }
+
+    await boss.work(job, async (jobs) => {
+      const jobList = Array.isArray(jobs) ? jobs : [jobs];
+      for (const j of jobList) {
+        await handler((j as any).data, { id: (j as any).id, name: (j as any).name });
+      }
+    });
+  }
+
+  async checkHealth(): Promise<{ healthy: boolean; details?: unknown }> {
+    try {
+      return {
+        healthy: true,
+        details: {
+          provider: this.provider,
+          started: this.isStarted,
+          schema: this.config.schema ?? 'pgboss',
+        },
+      };
+    } catch (err) {
+      return {
+        healthy: false,
+        details: {
+          provider: this.provider,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      };
+    }
   }
 }
 

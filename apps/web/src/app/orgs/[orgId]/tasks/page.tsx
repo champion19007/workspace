@@ -1,130 +1,164 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useParams } from 'next/navigation';
 import {
   Search,
   Plus,
-  Filter,
   CheckSquare,
   Calendar,
   Check,
+  AlertCircle,
+  CornerDownRight,
 } from 'lucide-react';
 import { TableShell, EmptyState } from '@/components/ui/table-shell';
 import {
   StatusBadge,
   PriorityBadge,
   TaskStatus,
-  TaskPriority,
 } from '@/components/ui/badge';
-import { Dialog } from '@/components/ui/dialog';
+import { CreateTaskDialog } from '@/components/tasks/CreateTaskDialog';
+import { TaskDetailDrawer } from '@/components/tasks/TaskDetailDrawer';
+import {
+  type TaskDTO,
+  formatRelativeDueDate,
+  isDateOverdue,
+  formatETag,
+} from '@workspace/core';
 
-interface TaskItem {
+interface ProjectOption {
   id: string;
-  key: string;
-  title: string;
-  status: TaskStatus;
-  priority: TaskPriority;
-  assigneeName: string;
-  dueDate: string;
+  name: string;
 }
 
-const INITIAL_TASKS: TaskItem[] = [
-  {
-    id: 't-1',
-    key: 'CORE-1',
-    title: 'Enforce PostgreSQL RLS and compound foreign key tenant boundaries',
-    status: 'completed',
-    priority: 'urgent',
-    assigneeName: 'Alex Mercer',
-    dueDate: '2026-10-10',
-  },
-  {
-    id: 't-2',
-    key: 'CORE-2',
-    title: 'Implement Supabase Auth PKCE callback and 30-day rolling session cookie',
-    status: 'completed',
-    priority: 'high',
-    assigneeName: 'Priya Sharma',
-    dueDate: '2026-10-12',
-  },
-  {
-    id: 't-3',
-    key: 'CORE-3',
-    title: 'Build application shell with dark charcoal palette and dynamic accent color',
-    status: 'in_progress',
-    priority: 'high',
-    assigneeName: 'Alex Mercer',
-    dueDate: '2026-10-15',
-  },
-  {
-    id: 't-4',
-    key: 'CORE-4',
-    title: 'Generate OpenAPI 3.1 contracts and RFC 9457 error handler',
-    status: 'todo',
-    priority: 'medium',
-    assigneeName: 'Rohan Gupta',
-    dueDate: '2026-10-20',
-  },
-  {
-    id: 't-5',
-    key: 'CORE-5',
-    title: 'Implement ltree tree relocation with GiST indexing',
-    status: 'todo',
-    priority: 'medium',
-    assigneeName: 'Priya Sharma',
-    dueDate: '2026-10-25',
-  },
-];
+export default function TasksPage() {
+  const params = useParams();
+  const orgId = params?.orgId as string;
 
-export function TasksPageView() {
-  const [tasks, setTasks] = useState<TaskItem[]>(INITIAL_TASKS);
+  const [tasks, setTasks] = useState<TaskDTO[]>([]);
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Filters
   const [searchQuery, setSearchQuery] = useState('');
+  const [projectFilter, setProjectFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
 
-  // New task modal
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [newPriority, setNewPriority] = useState<TaskPriority>('medium');
-  const [newAssignee, setNewAssignee] = useState('Alex Mercer');
-  const [newDueDate, setNewDueDate] = useState('2026-10-30');
+  // Modals & Drawers
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [selectedProjectIdForCreate, setSelectedProjectIdForCreate] = useState<string>('');
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
+  // Toggling status loading
+  const [togglingTaskId, setTogglingTaskId] = useState<string | null>(null);
+
+  // 1. Fetch projects and tasks
+  const loadData = useCallback(async () => {
+    if (!orgId) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Load projects for project dropdown
+      fetch(`/api/orgs/${orgId}/projects?limit=100`)
+        .then((res) => (res.ok ? res.json() : { projects: [] }))
+        .then((data) => {
+          if (data.projects) {
+            const list = data.projects.map((p: any) => ({ id: p.id, name: p.name }));
+            setProjects(list);
+            if (list.length > 0 && !selectedProjectIdForCreate) {
+              setSelectedProjectIdForCreate(list[0].id);
+            }
+          }
+        })
+        .catch(() => {});
+
+      // Load tasks
+      const projQuery = projectFilter !== 'all' ? `?projectId=${projectFilter}` : '';
+      const res = await fetch(`/api/orgs/${orgId}/tasks${projQuery}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Failed to load organization tasks');
+      }
+
+      const data = await res.json();
+      setTasks(data.tasks || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [orgId, projectFilter, selectedProjectIdForCreate]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // 2. Filter tasks
   const filteredTasks = tasks.filter((task) => {
     const matchesSearch =
       task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      task.key.toLowerCase().includes(searchQuery.toLowerCase());
+      task.key.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (task.assignee?.name || '').toLowerCase().includes(searchQuery.toLowerCase());
+
     const matchesStatus = statusFilter === 'all' || task.status === statusFilter;
     const matchesPriority = priorityFilter === 'all' || task.priority === priorityFilter;
-    return matchesSearch && matchesStatus && matchesPriority;
+    const matchesProject = projectFilter === 'all' || task.projectId === projectFilter;
+
+    return matchesSearch && matchesStatus && matchesPriority && matchesProject;
   });
 
-  const handleToggleComplete = (taskId: string) => {
-    setTasks((prev) =>
-      prev.map((t) =>
-        t.id === taskId
-          ? { ...t, status: t.status === 'completed' ? 'todo' : 'completed' }
-          : t
-      )
-    );
+  // 3. Toggle task status
+  const handleToggleStatus = async (task: TaskDTO, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (togglingTaskId === task.id) return;
+
+    setTogglingTaskId(task.id);
+    const nextStatus: TaskStatus = task.status === 'done' ? 'todo' : 'done';
+
+    try {
+      const res = await fetch(`/api/orgs/${orgId}/tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'If-Match': formatETag(task.version),
+        },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Failed to update task status');
+      }
+
+      const updated = await res.json();
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? updated : t)));
+    } catch (err: any) {
+      alert(`Could not toggle status: ${err.message}`);
+    } finally {
+      setTogglingTaskId(null);
+    }
   };
 
-  const handleCreateTask = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTitle.trim()) return;
+  const handleOpenDetail = (task: TaskDTO) => {
+    setSelectedTaskId(task.id);
+    setIsDrawerOpen(true);
+  };
 
-    const newTask: TaskItem = {
-      id: `t-${Date.now()}`,
-      key: `CORE-${tasks.length + 1}`,
-      title: newTitle.trim(),
-      status: 'todo',
-      priority: newPriority,
-      assigneeName: newAssignee,
-      dueDate: newDueDate,
-    };
-
+  const handleTaskCreated = (newTask: TaskDTO) => {
     setTasks((prev) => [newTask, ...prev]);
-    setNewTitle('');
-    setIsModalOpen(false);
+  };
+
+  const handleTaskUpdated = (updatedTask: TaskDTO) => {
+    setTasks((prev) => prev.map((t) => (t.id === updatedTask.id ? updatedTask : t)));
+  };
+
+  const handleTaskArchived = (archivedId: string) => {
+    setTasks((prev) => prev.filter((t) => t.id !== archivedId));
   };
 
   return (
@@ -133,20 +167,22 @@ export function TasksPageView() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-xl lg:text-2xl font-bold text-foreground tracking-tight">
-            Project Tasks
+            Organization Tasks
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            System of record tasks managed under hierarchical node trees.
+            System of record tasks across all accessible projects, protected with atomic concurrency.
           </p>
         </div>
 
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-accent text-accent-foreground font-bold text-xs shadow-md hover:opacity-90 transition-opacity self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add Task</span>
-        </button>
+        {projects.length > 0 && (
+          <button
+            onClick={() => setIsCreateOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-accent text-accent-foreground font-bold text-xs shadow-md hover:opacity-90 transition-opacity self-start sm:self-auto"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Task</span>
+          </button>
+        )}
       </div>
 
       {/* Toolbar Matching Screenshot 928 */}
@@ -158,14 +194,29 @@ export function TasksPageView() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search tasks by title or key..."
+            placeholder="Search tasks by title, key, or assignee..."
             className="w-full bg-transparent focus:outline-none placeholder:text-muted-foreground text-xs"
           />
         </div>
 
-        {/* Status Filter */}
-        <div className="flex items-center gap-2">
-          <Filter className="w-3.5 h-3.5 text-muted-foreground hidden sm:inline" />
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-2">
+          {projects.length > 0 && (
+            <select
+              value={projectFilter}
+              onChange={(e) => setProjectFilter(e.target.value)}
+              aria-label="Filter by project"
+              className="rounded-lg bg-panel-inset border border-border-subtle px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
+            >
+              <option value="all">All Projects</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          )}
+
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
@@ -175,10 +226,10 @@ export function TasksPageView() {
             <option value="all">All Statuses</option>
             <option value="todo">To Do</option>
             <option value="in_progress">In Progress</option>
-            <option value="completed">Completed</option>
+            <option value="done">Done</option>
+            <option value="blocked">Blocked</option>
           </select>
 
-          {/* Priority Filter */}
           <select
             value={priorityFilter}
             onChange={(e) => setPriorityFilter(e.target.value)}
@@ -194,16 +245,36 @@ export function TasksPageView() {
         </div>
       </div>
 
-      {/* Tasks Table Shell Matching Screenshot 928 */}
-      {filteredTasks.length === 0 ? (
+      {/* Error display */}
+      {error && (
+        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* Tasks Table Shell */}
+      {loading ? (
+        <div className="p-12 text-center text-xs text-muted-foreground bg-panel rounded-2xl border border-border-subtle">
+          Loading tasks...
+        </div>
+      ) : filteredTasks.length === 0 ? (
         <EmptyState
           icon={CheckSquare}
           title="No tasks found"
-          description="Try adjusting your filters or search query, or create a new task for this project."
-          action={{
-            label: "+ Add Task",
-            onClick: () => setIsModalOpen(true),
-          }}
+          description={
+            searchQuery || statusFilter !== 'all' || priorityFilter !== 'all' || projectFilter !== 'all'
+              ? 'Try adjusting your filters or search query.'
+              : 'There are no active tasks in this organization.'
+          }
+          action={
+            projects.length > 0
+              ? {
+                  label: '+ Add Task',
+                  onClick: () => setIsCreateOpen(true),
+                }
+              : undefined
+          }
         />
       ) : (
         <TableShell>
@@ -215,167 +286,170 @@ export function TasksPageView() {
                 <th className="py-3 px-4">Status</th>
                 <th className="py-3 px-4">Priority</th>
                 <th className="py-3 px-4">Assignee</th>
-                <th className="py-3 px-4">Due Date</th>
+                <th className="py-3 px-4">Deadline (IST)</th>
+                <th className="py-3 px-4 text-right">Subtasks</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle/60">
-              {filteredTasks.map((task) => (
-                <tr
-                  key={task.id}
-                  className="hover:bg-panel-elevated/40 transition-colors group"
-                >
-                  {/* Done Checkbox */}
-                  <td className="py-3 px-4">
-                    <button
-                      onClick={() => handleToggleComplete(task.id)}
-                      aria-label={`Toggle task ${task.key} completion`}
-                      className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${
-                        task.status === 'completed'
-                          ? 'bg-accent border-accent text-accent-foreground'
-                          : 'border-border-strong hover:border-accent text-transparent'
-                      }`}
-                    >
-                      <Check className="w-3 h-3 stroke-[3]" />
-                    </button>
-                  </td>
+              {filteredTasks.map((task) => {
+                const isOverdue = task.dueDate ? isDateOverdue(task.dueDate) : false;
+                const relativeDue = task.dueDate ? formatRelativeDueDate(task.dueDate) : null;
+                const isCompleted = task.status === 'done';
 
-                  {/* Key & Title */}
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2.5">
-                      <span className="font-mono font-bold text-[11px] px-1.5 py-0.5 rounded bg-panel-inset text-muted-foreground border border-border-subtle">
-                        {task.key}
-                      </span>
-                      <span
-                        className={`font-medium transition-all ${
-                          task.status === 'completed'
-                            ? 'line-through text-muted-foreground'
-                            : 'text-foreground'
+                return (
+                  <tr
+                    key={task.id}
+                    onClick={() => handleOpenDetail(task)}
+                    className="hover:bg-panel-elevated/50 transition-colors group cursor-pointer"
+                  >
+                    {/* Done Checkbox */}
+                    <td className="py-3 px-4">
+                      <button
+                        onClick={(e) => handleToggleStatus(task, e)}
+                        aria-label={`Toggle task ${task.key} completion`}
+                        className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${
+                          isCompleted
+                            ? 'bg-accent border-accent text-accent-foreground'
+                            : 'border-border-strong hover:border-accent text-transparent'
                         }`}
                       >
-                        {task.title}
-                      </span>
-                    </div>
-                  </td>
+                        <Check className="w-3 h-3 stroke-[3]" />
+                      </button>
+                    </td>
 
-                  {/* Status */}
-                  <td className="py-3 px-4">
-                    <StatusBadge status={task.status} size="sm" />
-                  </td>
+                    {/* Key & Title */}
+                    <td className="py-3 px-4">
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold text-[11px] px-1.5 py-0.5 rounded bg-panel-inset text-accent border border-border-subtle">
+                            {task.key}
+                          </span>
+                          <span
+                            className={`font-medium transition-all ${
+                              isCompleted
+                                ? 'line-through text-muted-foreground'
+                                : 'text-foreground group-hover:text-accent'
+                            }`}
+                          >
+                            {task.title}
+                          </span>
+                        </div>
 
-                  {/* Priority */}
-                  <td className="py-3 px-4">
-                    <PriorityBadge priority={task.priority} size="sm" />
-                  </td>
-
-                  {/* Assignee */}
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-1.5 text-muted-foreground">
-                      <div className="w-5 h-5 rounded-full bg-accent/20 border border-accent/40 flex items-center justify-center text-[10px] font-bold text-accent uppercase">
-                        {task.assigneeName.charAt(0)}
+                        {/* Labels row */}
+                        {task.labels && task.labels.length > 0 && (
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            {task.labels.map((l) => (
+                              <span
+                                key={l.id}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-panel-inset border border-border-subtle text-slate-300"
+                              >
+                                <span
+                                  className="w-1.5 h-1.5 rounded-full"
+                                  style={{ backgroundColor: l.color }}
+                                />
+                                {l.name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <span className="truncate">{task.assigneeName}</span>
-                    </div>
-                  </td>
+                    </td>
 
-                  {/* Due Date */}
-                  <td className="py-3 px-4 text-muted-foreground font-mono text-[11px]">
-                    <div className="flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-slate-500" />
-                      <span>{task.dueDate}</span>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    {/* Status */}
+                    <td className="py-3 px-4">
+                      <StatusBadge status={task.status} size="sm" />
+                    </td>
+
+                    {/* Priority */}
+                    <td className="py-3 px-4">
+                      <PriorityBadge priority={task.priority} size="sm" />
+                    </td>
+
+                    {/* Assignee */}
+                    <td className="py-3 px-4">
+                      {task.assignee ? (
+                        <div className="flex items-center gap-1.5 text-muted-foreground">
+                          <div className="w-5 h-5 rounded-full bg-accent/20 border border-accent/40 flex items-center justify-center text-[10px] font-bold text-accent uppercase">
+                            {task.assignee.name.charAt(0)}
+                          </div>
+                          <span className="truncate max-w-[120px] text-foreground">
+                            {task.assignee.name}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground/60 italic text-[11px]">
+                          Unassigned
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Deadline */}
+                    <td className="py-3 px-4 text-muted-foreground font-mono text-[11px]">
+                      {task.dueDate ? (
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                            <span className={isOverdue && !isCompleted ? 'text-rose-400 font-bold' : ''}>
+                              {task.dueDate}
+                            </span>
+                          </div>
+                          {relativeDue && !isCompleted && (
+                            <span
+                              className={`text-[10px] ${
+                                isOverdue ? 'text-rose-400 font-semibold' : 'text-slate-400'
+                              }`}
+                            >
+                              {relativeDue}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground/40">—</span>
+                      )}
+                    </td>
+
+                    {/* Subtasks Count */}
+                    <td className="py-3 px-4 text-right">
+                      {(task.subtaskCount ?? 0) > 0 ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-panel-inset border border-border-subtle text-slate-300">
+                          <CornerDownRight className="w-3 h-3 text-accent" />
+                          <span>{task.subtaskCount}</span>
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground/30 text-[10px]">0</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </TableShell>
       )}
 
-      {/* Add Task Modal Dialog */}
-      <Dialog
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title="Create New Task"
-        description="Add a task to the current project system of record."
-      >
-        <form onSubmit={handleCreateTask} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-1.5">
-              Task Title
-            </label>
-            <input
-              type="text"
-              required
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              placeholder="e.g. Implement Zoom webhook challenge response"
-              className="w-full px-3 py-2 rounded-xl bg-panel-inset border border-border-subtle text-foreground text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-            />
-          </div>
+      {/* Create Task Dialog */}
+      {selectedProjectIdForCreate && (
+        <CreateTaskDialog
+          isOpen={isCreateOpen}
+          onClose={() => setIsCreateOpen(false)}
+          orgId={orgId}
+          projectId={selectedProjectIdForCreate}
+          onTaskCreated={handleTaskCreated}
+        />
+      )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-1.5">
-                Priority
-              </label>
-              <select
-                value={newPriority}
-                onChange={(e) => setNewPriority(e.target.value as TaskPriority)}
-                className="w-full px-3 py-2 rounded-xl bg-panel-inset border border-border-subtle text-foreground text-xs focus:outline-none"
-              >
-                <option value="urgent">Urgent</option>
-                <option value="high">High</option>
-                <option value="medium">Medium</option>
-                <option value="low">Low</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-1.5">
-                Assignee
-              </label>
-              <input
-                type="text"
-                value={newAssignee}
-                onChange={(e) => setNewAssignee(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-panel-inset border border-border-subtle text-foreground text-xs focus:outline-none"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-1.5">
-              Due Date (YYYY-MM-DD)
-            </label>
-            <input
-              type="date"
-              value={newDueDate}
-              onChange={(e) => setNewDueDate(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-panel-inset border border-border-subtle text-foreground text-xs focus:outline-none"
-            />
-          </div>
-
-          <div className="pt-2 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setIsModalOpen(false)}
-              className="px-4 py-2 rounded-xl border border-border-subtle hover:bg-panel-elevated text-xs font-medium text-muted-foreground hover:text-foreground"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 rounded-xl bg-accent text-accent-foreground font-bold text-xs hover:opacity-90 transition-opacity"
-            >
-              Create Task
-            </button>
-          </div>
-        </form>
-      </Dialog>
+      {/* Task Details Drawer */}
+      <TaskDetailDrawer
+        isOpen={isDrawerOpen}
+        onClose={() => {
+          setIsDrawerOpen(false);
+          setSelectedTaskId(null);
+        }}
+        orgId={orgId}
+        taskId={selectedTaskId}
+        onTaskUpdated={handleTaskUpdated}
+        onTaskArchived={handleTaskArchived}
+      />
     </div>
   );
-}
-
-export default function TasksPage() {
-  return <TasksPageView />;
 }

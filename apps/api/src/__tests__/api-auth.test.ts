@@ -4,9 +4,7 @@ import {
   signInternalApiRequest,
 } from '@workspace/core';
 import { buildServer, type ServerInstance } from '../server.js';
-import { findOrCreateUserByEmail } from '@workspace/db';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import * as schema from '@workspace/db';
+import { findOrCreateUserByEmail, type DatabaseInstance, memberships } from '@workspace/db';
 
 describe('Fastify API Authentication, Onboarding & RBAC Integration Tests', () => {
   const secret = 'test-origin-verify-secret-token-16-chars';
@@ -23,11 +21,11 @@ describe('Fastify API Authentication, Onboarding & RBAC Integration Tests', () =
   });
 
   let server: ServerInstance;
-  let db: ReturnType<typeof drizzle<typeof schema>>;
+  let db: DatabaseInstance;
 
   beforeAll(async () => {
     server = buildServer(testConfig);
-    db = drizzle(server.sql, { schema });
+    db = server.db;
   });
 
   afterAll(async () => {
@@ -224,7 +222,7 @@ describe('Fastify API Authentication, Onboarding & RBAC Integration Tests', () =
       const orgId = JSON.parse(createRes.payload).org.id;
 
       // Add member directly
-      await db.insert(schema.memberships).values({
+      await db.insert(memberships).values({
         orgId,
         userId: member.id,
         role: 'member',

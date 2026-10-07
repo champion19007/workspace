@@ -1,6 +1,5 @@
 import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import fp from 'fastify-plugin';
-import { eq, and } from 'drizzle-orm';
 import {
   type AppConfig,
   type AppPorts,
@@ -9,12 +8,11 @@ import {
   ForbiddenError,
   NotFoundError,
   verifyInternalApiRequest,
-  isValidUuid,
 } from '@workspace/core';
 import {
   type DatabaseInstance,
-  orgs,
-  memberships,
+  getOrganizationByIdOrSlug,
+  getMembershipContext,
 } from '@workspace/db';
 
 export interface AuthenticatedUser {
@@ -120,24 +118,13 @@ const authPluginInner: FastifyPluginAsync<AuthPluginOptions> = async (app, optio
     }
 
     // Resolve org by UUID or slug
-    const isId = isValidUuid(orgIdentifier);
-    const [org] = await db
-      .select({ id: orgs.id, slug: orgs.slug, name: orgs.name })
-      .from(orgs)
-      .where(isId ? eq(orgs.id, orgIdentifier) : eq(orgs.slug, orgIdentifier))
-      .limit(1);
-
+    const org = await getOrganizationByIdOrSlug(db, orgIdentifier);
     if (!org) {
       throw new NotFoundError(`Organization "${orgIdentifier}" was not found`);
     }
 
     // Query user membership
-    const [membership] = await db
-      .select({ role: memberships.role, sessionEpoch: memberships.sessionEpoch })
-      .from(memberships)
-      .where(and(eq(memberships.orgId, org.id), eq(memberships.userId, request.user.id)))
-      .limit(1);
-
+    const membership = await getMembershipContext(db, org.id, request.user.id);
     if (!membership) {
       throw new ForbiddenError(`You do not have access to organization "${org.slug}"`);
     }

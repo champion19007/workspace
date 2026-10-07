@@ -10,6 +10,16 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   serverExternalPackages: ['@workspace/core', '@workspace/adapters', '@workspace/db', 'postgres'],
   outputFileTracingRoot: path.resolve(__dirname, '../../'),
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.resolve = config.resolve || {};
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        crypto: false,
+      };
+    }
+    return config;
+  },
 };
 
 export default nextConfig;

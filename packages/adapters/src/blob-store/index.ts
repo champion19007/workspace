@@ -1,3 +1,4 @@
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import {
   type BlobStorePort,
   type PresignedUrlResult,
@@ -70,6 +71,8 @@ export interface SupabaseStorageConfig {
 
 export class SupabaseBlobStoreAdapter implements BlobStorePort {
   public readonly provider = 'supabase';
+  private client: SupabaseClient | null = null;
+  private readonly bucket: string;
 
   constructor(private readonly config: SupabaseStorageConfig) {
     if (!config.supabaseUrl || !config.serviceRoleKey) {
@@ -79,39 +82,95 @@ export class SupabaseBlobStoreAdapter implements BlobStorePort {
         'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.'
       );
     }
+    this.bucket = config.bucket || 'workspace-attachments';
   }
 
-  async getDownloadUrl(_key: string, _expiresInSeconds?: number): Promise<PresignedUrlResult> {
-    throw new AdapterUnavailableError('BlobStore', 'supabase', 'Supabase Storage client uninitialized.');
+  private getClient(): SupabaseClient {
+    if (!this.client) {
+      this.client = createClient(this.config.supabaseUrl!, this.config.serviceRoleKey!, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+    }
+    return this.client;
   }
 
-  async getUploadUrl(_key: string, _contentType: string, _expiresInSeconds?: number): Promise<PresignedUrlResult> {
-    throw new AdapterUnavailableError('BlobStore', 'supabase', 'Supabase Storage client uninitialized.');
+  async getDownloadUrl(key: string, expiresInSeconds = 300): Promise<PresignedUrlResult> {
+    const client = this.getClient();
+    const { data, error } = await client.storage.from(this.bucket).createSignedUrl(key, expiresInSeconds);
+    if (error || !data) {
+      throw new Error(`Failed to generate signed download URL: ${error?.message}`);
+    }
+    return {
+      url: data.signedUrl,
+      expiresAt: new Date(Date.now() + expiresInSeconds * 1000),
+    };
   }
 
-  async putObject(_req: PutObjectRequest): Promise<void> {
-    throw new AdapterUnavailableError('BlobStore', 'supabase', 'Supabase Storage client uninitialized.');
+  async getUploadUrl(key: string, _contentType: string, expiresInSeconds = 300): Promise<PresignedUrlResult> {
+    const client = this.getClient();
+    const { data, error } = await client.storage.from(this.bucket).createSignedUploadUrl(key);
+    if (error || !data) {
+      throw new Error(`Failed to generate signed upload URL: ${error?.message}`);
+    }
+    return {
+      url: data.signedUrl,
+      expiresAt: new Date(Date.now() + expiresInSeconds * 1000),
+    };
   }
 
-  async getObject(_key: string): Promise<GetObjectResult> {
-    throw new AdapterUnavailableError('BlobStore', 'supabase', 'Supabase Storage client uninitialized.');
+  async putObject(req: PutObjectRequest): Promise<void> {
+    const client = this.getClient();
+    const { error } = await client.storage.from(this.bucket).upload(req.key, req.body, {
+      contentType: req.contentType,
+      upsert: true,
+    });
+    if (error) {
+      throw new Error(`Failed to put blob ${req.key}: ${error.message}`);
+    }
   }
 
-  async deleteObject(_key: string): Promise<void> {
-    throw new AdapterUnavailableError('BlobStore', 'supabase', 'Supabase Storage client uninitialized.');
+  async getObject(key: string): Promise<GetObjectResult> {
+    const client = this.getClient();
+    const { data, error } = await client.storage.from(this.bucket).download(key);
+    if (error || !data) {
+      throw new Error(`Failed to get blob ${key}: ${error?.message}`);
+    }
+    const buffer = new Uint8Array(await data.arrayBuffer());
+    return {
+      body: buffer,
+      contentType: data.type || 'application/octet-stream',
+      contentLength: buffer.byteLength,
+    };
   }
 
-  async deletePrefix(_prefix: string): Promise<number> {
-    throw new AdapterUnavailableError('BlobStore', 'supabase', 'Supabase Storage client uninitialized.');
+  async deleteObject(key: string): Promise<void> {
+    const client = this.getClient();
+    const { error } = await client.storage.from(this.bucket).remove([key]);
+    if (error) {
+      throw new Error(`Failed to delete blob ${key}: ${error.message}`);
+    }
+  }
+
+  async deletePrefix(prefix: string): Promise<number> {
+    const client = this.getClient();
+    const { data, error } = await client.storage.from(this.bucket).list(prefix);
+    if (error || !data) return 0;
+    const paths = data.map((item) => `${prefix}/${item.name}`);
+    if (paths.length === 0) return 0;
+    const { error: removeError } = await client.storage.from(this.bucket).remove(paths);
+    if (removeError) {
+      throw new Error(`Failed to delete prefix ${prefix}: ${removeError.message}`);
+    }
+    return paths.length;
   }
 
   async checkHealth(): Promise<{ healthy: boolean; details?: unknown }> {
     return {
-      healthy: false,
+      healthy: Boolean(this.config.supabaseUrl && this.config.serviceRoleKey),
       details: {
         provider: this.provider,
-        error: 'Supabase Storage uninitialized',
-        configured: Boolean(this.config.supabaseUrl),
+        bucket: this.bucket,
+        configured: Boolean(this.config.supabaseUrl && this.config.serviceRoleKey),
       },
     };
   }

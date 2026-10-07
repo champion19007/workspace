@@ -31,12 +31,24 @@ export const AppConfigSchema = z.object({
   LLM_PROVIDER: z.enum(['anthropic', 'bedrock', 'mock']).default('mock'),
   STORAGE_PROVIDER: z.enum(['supabase', 's3', 'in_memory']).default('in_memory'),
   AUTH_PROVIDER: z.enum(['supabase', 'cognito', 'mock']).default('mock'),
+  SECRET_STORE_PROVIDER: z.enum(['in_memory', 'aws_secrets_manager']).default('in_memory'),
+  ZOOM_CLIENT_PROVIDER: z.enum(['mock', 'http']).default('mock'),
+
+  // Zoom Integration Settings
+  ZOOM_CLIENT_ID: z.string().default('mock_zoom_client_id'),
+  ZOOM_CLIENT_SECRET: z.string().default('mock_zoom_client_secret'),
+  ZOOM_WEBHOOK_SECRET_TOKEN: z.string().default('mock_zoom_webhook_secret_token'),
+  ZOOM_REDIRECT_URI: z.string().default('http://localhost:3000/api/orgs/default/integrations/zoom/callback'),
+  ZOOM_OAUTH_URL: z.string().default('https://zoom.us/oauth'),
+  ZOOM_API_URL: z.string().default('https://api.zoom.us/v2'),
 
   // Architecture A Providers (Optional until live)
   SUPABASE_URL: z.string().optional(),
   SUPABASE_ANON_KEY: z.string().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
+  VOYAGE_API_KEY: z.string().optional(),
+  VOYAGE_MODEL: z.string().default('voyage-3-lite'),
 
   // Architecture B Providers (Optional until live)
   AWS_REGION: z.string().default('ap-south-1'),

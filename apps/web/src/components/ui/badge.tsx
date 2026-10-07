@@ -16,7 +16,7 @@ import {
   Eye,
 } from 'lucide-react';
 
-export type TaskStatus = 'todo' | 'in_progress' | 'completed' | 'blocked' | 'cancelled';
+export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'completed' | 'blocked' | 'cancelled';
 export type TaskPriority = 'urgent' | 'high' | 'medium' | 'low';
 export type OrgRole = 'owner' | 'admin' | 'member' | 'viewer';
 
@@ -49,12 +49,13 @@ export function StatusBadge({
         </span>
       );
     case 'completed':
+    case 'done' as any:
       return (
         <span
           className={`inline-flex items-center gap-1.5 rounded-full font-medium bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 ${sizeClasses}`}
         >
           <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-          <span>Completed</span>
+          <span>Done</span>
         </span>
       );
     case 'blocked':
@@ -176,4 +177,35 @@ export function RoleBadge({
         </span>
       );
   }
+}
+
+export function Badge({
+  children,
+  variant = 'default',
+  className = '',
+}: {
+  children: React.ReactNode;
+  variant?: 'default' | 'accent' | 'neutral' | 'success' | 'warning' | 'danger';
+  className?: string;
+}) {
+  let variantStyles = 'bg-slate-800 text-slate-300 border-slate-700';
+  if (variant === 'accent') {
+    variantStyles = 'bg-accent/15 text-accent border-accent/30';
+  } else if (variant === 'neutral') {
+    variantStyles = 'bg-panel-inset text-muted-foreground border-border-subtle';
+  } else if (variant === 'success') {
+    variantStyles = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
+  } else if (variant === 'warning') {
+    variantStyles = 'bg-amber-500/10 text-amber-400 border-amber-500/30';
+  } else if (variant === 'danger') {
+    variantStyles = 'bg-rose-500/10 text-rose-400 border-rose-500/30';
+  }
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${variantStyles} ${className}`}
+    >
+      {children}
+    </span>
+  );
 }

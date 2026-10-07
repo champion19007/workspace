@@ -15,7 +15,7 @@ export interface LLMCompletionRequest<T> {
   promptVersion: string;
   tier: ModelTier;
   input: unknown;
-  schema: ZodType<T>;
+  schema: ZodType<T, any, any>;
   temperature?: number;
   systemPrefix?: string;
   orgGlossary?: Record<string, string>;

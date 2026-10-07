@@ -77,3 +77,5 @@ export function evaluateMetrics(results: {
     totalMeetingsEvaluated: 1,
   };
 }
+
+export * from './golden-set.js';

@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@workspace/core": "workspace:*",
+    "@workspace/db": "workspace:*",
     "@workspace/prompts": "workspace:*",
     "zod": "^3.24.2"
   },

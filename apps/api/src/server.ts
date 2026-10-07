@@ -3,18 +3,32 @@ import cors from '@fastify/cors';
 import {
   type AppConfig,
   type AppPorts,
-  DomainError,
   PINO_REDACT_PATHS,
+  generateUuidV7,
 } from '@workspace/core';
 import { createAppPorts } from '@workspace/adapters';
-import { createApiClient, checkDatabaseHealth, type Sql } from '@workspace/db';
+import { createApiClient, checkDatabaseHealth, type Sql, type DatabaseInstance } from '@workspace/db';
 import { authPlugin } from './plugins/auth.js';
+import { idempotencyPlugin } from './plugins/idempotency.js';
+import { concurrencyPlugin } from './plugins/concurrency.js';
+import { rateLimitPlugin } from './plugins/rate-limit.js';
+import { swaggerPlugin } from './plugins/swagger.js';
+import { rfc9457ErrorHandler } from './plugins/error-handler.js';
 import { orgRoutes } from './routes/orgs.js';
+import { nodeRoutes } from './routes/nodes.js';
+import { taskRoutes } from './routes/tasks.js';
+import { labelRoutes } from './routes/labels.js';
+import { dashboardRoutes } from './routes/dashboard.js';
+import { docRoutes } from './routes/docs.js';
+import { zoomRoutes } from './routes/zoom.js';
+import { webhookRoutes } from './routes/webhooks.js';
+import { meetingRoutes } from './routes/meetings.js';
 
 export interface ServerInstance {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   app: any;
   sql: Sql;
+  db: DatabaseInstance;
   ports: AppPorts;
   start: () => Promise<void>;
   close: () => Promise<void>;
@@ -22,12 +36,32 @@ export interface ServerInstance {
 
 export function buildServer(config: AppConfig): ServerInstance {
   const app = Fastify({
+    genReqId: (req) => {
+      const incoming = req.headers['x-request-id'];
+      if (typeof incoming === 'string' && incoming.trim()) {
+        return incoming.trim();
+      }
+      return generateUuidV7();
+    },
+    requestIdHeader: 'x-request-id',
     logger: {
       level: config.LOG_LEVEL,
       redact: config.REDACT_SENSITIVE_LOGS ? PINO_REDACT_PATHS : undefined,
       timestamp: () => `,"time":"${new Date().toISOString()}"`,
     },
     keepAliveTimeout: 65_000,
+  });
+
+  // Capture exact raw request body for webhook HMAC signature verification before JSON parsing
+  app.addContentTypeParser('application/json', { parseAs: 'buffer' }, (req, body, done) => {
+    try {
+      const str = (body as Buffer).toString('utf8');
+      (req as unknown as { rawBody: string }).rawBody = str;
+      const json = str.trim() ? JSON.parse(str) : {};
+      done(null, json);
+    } catch (err) {
+      done(err as Error, undefined);
+    }
   });
 
   const { sql, db } = createApiClient({
@@ -37,45 +71,48 @@ export function buildServer(config: AppConfig): ServerInstance {
 
   const ports = createAppPorts(config);
 
-  // Register CORS
+  // 1. CORS
   app.register(cors, {
     origin: config.CORS_ORIGIN,
     credentials: true,
   });
 
-  // Register Auth plugin and Org routes
+  // 2. OpenAPI 3.1 Swagger & UI Documentation
+  app.register(swaggerPlugin);
+
+  // 3. Rate Limiting (600 req/min per user, 6000 req/min org, strict auth limits)
+  app.register(rateLimitPlugin);
+
+  // 4. Concurrency Plugin (If-Match verification & ETag generation)
+  app.register(concurrencyPlugin);
+
+  // 5. Auth Plugin (Authenticate hook & requireOrgContext hook)
   app.register(authPlugin, { config, ports, db });
-  app.register(orgRoutes, { db });
 
-  // RFC 9457 Problem Details Error Handler
-  app.setErrorHandler((error, request, reply) => {
-    request.log.error({ err: error }, 'Request processing error');
+  // 6. Idempotency Plugin (PostgreSQL-backed for Architecture A)
+  app.register(idempotencyPlugin, { db });
 
-    if (error instanceof DomainError) {
-      reply.header('content-type', 'application/problem+json');
-      return reply.status(error.status).send({
-        type: `https://api.workspace.dev/errors/${error.code.toLowerCase()}`,
-        title: error.message,
-        status: error.status,
-        detail: error.message,
-        code: error.code,
-        details: error.details,
-      });
-    }
+  // 7. Domain Routes (Org onboarding, members, invitations, nodes, tasks, labels)
+  app.register(orgRoutes, { db, ports });
+  app.register(nodeRoutes, { db, ports });
+  app.register(taskRoutes, { db, ports });
+  app.register(labelRoutes, { db, ports });
+  app.register(dashboardRoutes, { db, ports });
+  app.register(docRoutes, { db, ports });
+  app.register(zoomRoutes, { sql, ports, config });
+  app.register(webhookRoutes, { sql, ports, config });
+  app.register(meetingRoutes, { sql, ports });
 
-    const err = error as Error & { statusCode?: number };
-    const statusCode = err.statusCode ?? 500;
-    reply.header('content-type', 'application/problem+json');
-    return reply.status(statusCode).send({
-      type: 'https://api.workspace.dev/errors/internal-error',
-      title: statusCode === 500 ? 'Internal Server Error' : err.message,
-      status: statusCode,
-      detail: statusCode === 500 ? 'An unexpected server error occurred' : err.message,
-      code: 'INTERNAL_ERROR',
-    });
+  // 8. RFC 9457 Problem Details Error Handler
+  app.setErrorHandler(rfc9457ErrorHandler);
+
+  // 9. Attach x-request-id header to all HTTP responses
+  app.addHook('onSend', async (request, reply, payload) => {
+    reply.header('x-request-id', request.id);
+    return payload;
   });
 
-  // 1. Liveness check: verifies process is alive and responsive without touching external dependencies
+  // 10. Liveness check: verifies process is alive and responsive without external dependencies
   app.get('/healthz', async (_request, reply) => {
     return reply.status(200).send({
       status: 'pass',
@@ -85,7 +122,7 @@ export function buildServer(config: AppConfig): ServerInstance {
     });
   });
 
-  // 2. Readiness check: verifies external dependencies (DB connection pool & ports)
+  // 10. Readiness check: verifies external dependencies (DB connection pool & ports)
   app.get('/readyz', async (_request, reply) => {
     const dbHealth = await checkDatabaseHealth(sql);
     const queueHealth = await ports.queue.checkHealth();
@@ -105,7 +142,7 @@ export function buildServer(config: AppConfig): ServerInstance {
     });
   });
 
-  // 3. Foundation status endpoint
+  // 11. Foundation status endpoint
   app.get('/api/v1/status', async (_request, reply) => {
     return reply.status(200).send({
       environment: config.APP_ENV,
@@ -117,8 +154,9 @@ export function buildServer(config: AppConfig): ServerInstance {
         blobStore: ports.blobStore.provider,
         auth: ports.auth.provider,
       },
-      stage: 'Stage 1 of 25 (Foundation)',
+      stage: 'Stage 1 of 25 (Foundation, Adapters, Outbox & Background Jobs)',
       readyForStage2: true,
+      readyForStage6: true,
     });
   });
 
@@ -134,5 +172,5 @@ export function buildServer(config: AppConfig): ServerInstance {
     app.log.info('Fastify API shutdown completed cleanly');
   };
 
-  return { app, sql, ports, start, close };
+  return { app, sql, db, ports, start, close };
 }

@@ -1,22 +1,145 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useParams } from 'next/navigation';
 import {
   Palette,
   Settings as SettingsIcon,
   ShieldCheck,
+  Cable,
   RotateCcw,
   Check,
 } from 'lucide-react';
 import { useTheme, DEFAULT_ACCENT, AccentPreset } from '@/components/theme-provider';
-import { CompletionRing } from '@/components/ui/completion-ring';
+import { ZoomIntegrationCard } from '@/components/integrations/zoom-card';
+import { ZoomHostDrawer } from '@/components/integrations/zoom-host-drawer';
+import { MyConsentCard } from '@/components/integrations/my-consent-card';
+import type {
+  ZoomIntegrationDTO,
+  ZoomHostConsentDTO,
+  ZoomHostConsentStatus,
+} from '@workspace/core';
 
 export default function SettingsPage() {
+  const params = useParams();
+  const orgId = (params?.orgId as string) || '';
+
   const { accentColor, setAccentColor, resetAccentColor, presets } = useTheme();
 
-  const [activeTab, setActiveTab] = useState<'appearance' | 'general' | 'security'>('appearance');
+  const [activeTab, setActiveTab] = useState<'appearance' | 'general' | 'integrations' | 'security'>('appearance');
   const [customHex, setCustomHex] = useState(accentColor);
   const [retentionDays, setRetentionDays] = useState(180);
+
+  // Zoom Integration State
+  const [zoomIntegration, setZoomIntegration] = useState<ZoomIntegrationDTO | null>(null);
+  const [zoomHosts, setZoomHosts] = useState<ZoomHostConsentDTO[]>([]);
+  const [isHostDrawerOpen, setIsHostDrawerOpen] = useState(false);
+  const [isLoadingZoom, setIsLoadingZoom] = useState(false);
+
+  const fetchZoomIntegration = useCallback(async () => {
+    if (!orgId) return;
+    setIsLoadingZoom(true);
+    try {
+      const res = await fetch(`/api/orgs/${orgId}/integrations/zoom`);
+      if (res.ok) {
+        const data = await res.json();
+        setZoomIntegration(data.integration || null);
+      }
+    } catch (err) {
+      console.error('Failed to load Zoom integration:', err);
+    } finally {
+      setIsLoadingZoom(false);
+    }
+  }, [orgId]);
+
+  const fetchZoomHosts = useCallback(async () => {
+    if (!orgId) return;
+    try {
+      const res = await fetch(`/api/orgs/${orgId}/integrations/zoom/hosts`);
+      if (res.ok) {
+        const data = await res.json();
+        setZoomHosts(data.hosts || []);
+      }
+    } catch (err) {
+      console.error('Failed to load Zoom hosts:', err);
+    }
+  }, [orgId]);
+
+  useEffect(() => {
+    if (activeTab === 'integrations') {
+      fetchZoomIntegration();
+      fetchZoomHosts();
+    }
+  }, [activeTab, fetchZoomIntegration, fetchZoomHosts]);
+
+  const handleConnectZoom = async () => {
+    try {
+      const res = await fetch(`/api/orgs/${orgId}/integrations/zoom`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to initiate Zoom authorization');
+      }
+
+      const { authorizationUrl } = await res.json();
+      if (authorizationUrl) {
+        window.location.href = authorizationUrl;
+      }
+    } catch (err) {
+      console.error('Error initiating Zoom connection:', err);
+      alert(err instanceof Error ? err.message : 'Failed to connect Zoom');
+    }
+  };
+
+  const handleDisconnectZoom = async () => {
+    try {
+      const res = await fetch(`/api/orgs/${orgId}/integrations/zoom`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to disconnect Zoom');
+      }
+
+      const data = await res.json();
+      setZoomIntegration(data.integration);
+      await fetchZoomHosts();
+    } catch (err) {
+      console.error('Error disconnecting Zoom:', err);
+      alert(err instanceof Error ? err.message : 'Failed to disconnect Zoom');
+    }
+  };
+
+  const handleUpdateHostConsent = async (
+    zoomUserId: string,
+    update: { consentStatus?: ZoomHostConsentStatus; adminDisabled?: boolean }
+  ) => {
+    try {
+      const res = await fetch(`/api/orgs/${orgId}/integrations/zoom/hosts/${zoomUserId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(update),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to update host consent');
+      }
+
+      const data = await res.json();
+      setZoomHosts((prev) =>
+        prev.map((h) => (h.zoomUserId === zoomUserId ? data.host : h))
+      );
+    } catch (err) {
+      console.error('Error updating host consent:', err);
+      alert(err instanceof Error ? err.message : 'Failed to update host consent');
+    }
+  };
 
   const handleHexChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -38,11 +161,11 @@ export default function SettingsPage() {
           Organization Settings
         </h1>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Configure interface themes, retention rules, and tenant preferences.
+          Configure interface themes, external integrations, retention rules, and tenant preferences.
         </p>
       </div>
 
-      {/* Tabs Header Matching Screenshot 958 */}
+      {/* Tabs Header Matching Screenshot 958 & Screenshot 944 */}
       <div className="flex border-b border-border-subtle gap-2">
         <button
           onClick={() => setActiveTab('appearance')}
@@ -54,6 +177,18 @@ export default function SettingsPage() {
         >
           <Palette className="w-4 h-4" />
           <span>Appearance</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('integrations')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-all ${
+            activeTab === 'integrations'
+              ? 'border-accent text-accent'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <Cable className="w-4 h-4" />
+          <span>Integrations</span>
         </button>
 
         <button
@@ -105,43 +240,33 @@ export default function SettingsPage() {
                     onClick={() => handlePresetSelect(preset.hex)}
                     className={`flex items-center gap-2.5 p-3 rounded-xl border text-xs font-semibold transition-all ${
                       isSelected
-                        ? 'border-accent bg-panel-elevated text-foreground shadow-sm'
-                        : 'border-border-subtle bg-panel-inset hover:bg-panel-elevated text-muted-foreground'
+                        ? 'border-accent bg-panel-elevated shadow-sm'
+                        : 'border-border-subtle bg-panel hover:bg-panel-elevated'
                     }`}
                   >
                     <span
-                      className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center shadow-inner"
+                      className="w-4 h-4 rounded-full border border-black/20 shrink-0"
                       style={{ backgroundColor: preset.hex }}
-                    >
-                      {isSelected && <Check className="w-3 h-3 text-slate-950 font-bold" />}
-                    </span>
-                    <span className="truncate">{preset.name}</span>
+                    />
+                    <span className="text-foreground">{preset.name}</span>
+                    {isSelected && <Check className="w-3.5 h-3.5 text-accent ml-auto" />}
                   </button>
                 );
               })}
             </div>
 
-            {/* Hex Picker & Reset */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-panel-inset border border-border-subtle">
-              <div className="flex items-center gap-3">
+            {/* Custom Hex Row */}
+            <div className="pt-2 border-t border-border-subtle flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl bg-panel-inset border border-border-subtle">
+                <span className="text-xs text-muted-foreground font-mono">Hex:</span>
                 <input
-                  type="color"
-                  value={accentColor}
-                  onChange={(e) => handlePresetSelect(e.target.value)}
-                  className="w-9 h-9 rounded-xl cursor-pointer border-0 bg-transparent"
+                  type="text"
+                  value={customHex}
+                  onChange={handleHexChange}
+                  placeholder="#d86dfc"
+                  maxLength={7}
+                  className="w-full bg-transparent text-xs font-mono font-bold text-foreground focus:outline-none"
                 />
-                <div>
-                  <div className="text-[10px] font-semibold text-muted-foreground uppercase">
-                    Hex Code
-                  </div>
-                  <input
-                    type="text"
-                    value={customHex}
-                    onChange={handleHexChange}
-                    maxLength={7}
-                    className="bg-transparent font-mono font-bold text-sm text-foreground focus:outline-none"
-                  />
-                </div>
               </div>
 
               <button
@@ -149,38 +274,48 @@ export default function SettingsPage() {
                   setCustomHex(DEFAULT_ACCENT);
                   resetAccentColor();
                 }}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-border-subtle hover:bg-panel-elevated text-xs font-medium text-muted-foreground hover:text-foreground transition-colors self-start sm:self-auto"
+                className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl border border-border-subtle bg-panel hover:bg-panel-elevated text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span>Reset to Default Orchid (#d86dfc)</span>
+                <span>Reset Default</span>
               </button>
             </div>
           </div>
+        </div>
+      )}
 
-          {/* Live Preview Panel Matching Screenshot 958 */}
-          <div className="p-6 rounded-2xl bg-panel border border-border-subtle space-y-4">
-            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-              Component Appearance Preview
-            </h3>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-4 rounded-xl bg-panel-inset border border-border-subtle space-y-3">
-                <div className="text-xs font-semibold text-foreground">Interactive Buttons</div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button className="px-4 py-2 rounded-xl bg-accent text-accent-foreground font-bold text-xs shadow-md">
-                    Solid Action Button
-                  </button>
-                  <span className="px-2.5 py-1 rounded-full bg-accent/20 text-accent border border-accent/40 text-xs font-semibold">
-                    Accent Pill
-                  </span>
-                </div>
-              </div>
-
-              <div className="p-4 rounded-xl bg-panel-inset border border-border-subtle flex items-center justify-center">
-                <CompletionRing percentage={75} size={110} label="SAMPLE RING" />
-              </div>
-            </div>
+      {/* Tab: Integrations Matching Screenshot 944 */}
+      {activeTab === 'integrations' && (
+        <div className="space-y-6">
+          <div>
+            <h2 className="text-sm font-bold text-foreground uppercase tracking-wider mb-1">
+              Connected Services & Meeting Integrations
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Administer cloud meeting intake, OAuth authorization, verified host opt-in, and transcript streaming.
+            </p>
           </div>
+
+          <ZoomIntegrationCard
+            integration={zoomIntegration}
+            orgId={orgId}
+            userRole="owner"
+            onConnect={handleConnectZoom}
+            onDisconnect={handleDisconnectZoom}
+            onOpenHostDrawer={() => setIsHostDrawerOpen(true)}
+            isLoading={isLoadingZoom}
+          />
+
+          <MyConsentCard orgId={orgId} />
+
+          <ZoomHostDrawer
+            isOpen={isHostDrawerOpen}
+            onClose={() => setIsHostDrawerOpen(false)}
+            hosts={zoomHosts}
+            userRole="owner"
+            onUpdateConsent={handleUpdateHostConsent}
+            isLoading={isLoadingZoom}
+          />
         </div>
       )}
 
@@ -222,6 +357,10 @@ export default function SettingsPage() {
             <div className="p-3 rounded-xl bg-panel-inset border border-border-subtle flex items-center justify-between">
               <span>PostgreSQL Row-Level Security</span>
               <span className="text-emerald-400 font-mono font-bold">ENFORCED</span>
+            </div>
+            <div className="p-3 rounded-xl bg-panel-inset border border-border-subtle flex items-center justify-between">
+              <span>Managed Secret Store (Zero Plaintext Token DB)</span>
+              <span className="text-emerald-400 font-mono font-bold">ACTIVE</span>
             </div>
             <div className="p-3 rounded-xl bg-panel-inset border border-border-subtle flex items-center justify-between">
               <span>BFF 30-Day Rolling Sessions</span>

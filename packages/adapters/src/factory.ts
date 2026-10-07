@@ -4,6 +4,8 @@ import { InMemoryRealtimeAdapter, SupabaseRealtimeAdapter, AppSyncRealtimeAdapte
 import { MockLlmAdapter, AnthropicLlmAdapter, BedrockLlmAdapter } from './llm/index.js';
 import { InMemoryBlobStoreAdapter, SupabaseBlobStoreAdapter, S3BlobStoreAdapter } from './blob-store/index.js';
 import { MockAuthAdapter, SupabaseAuthAdapter, CognitoAuthAdapter } from './auth/index.js';
+import { InMemorySecretStoreAdapter, AwsSecretsManagerAdapter } from './secret-store/index.js';
+import { MockZoomClientAdapter, HttpZoomClientAdapter } from './zoom/index.js';
 
 export function createAppPorts(config: AppConfig): AppPorts {
   // 1. Queue Port
@@ -54,7 +56,11 @@ export function createAppPorts(config: AppConfig): AppPorts {
       llm = new MockLlmAdapter();
       break;
     case 'anthropic':
-      llm = new AnthropicLlmAdapter({ apiKey: config.ANTHROPIC_API_KEY });
+      llm = new AnthropicLlmAdapter({
+        apiKey: config.ANTHROPIC_API_KEY,
+        voyageApiKey: config.VOYAGE_API_KEY,
+        voyageModel: config.VOYAGE_MODEL,
+      });
       break;
     case 'bedrock':
       llm = new BedrockLlmAdapter({
@@ -111,5 +117,36 @@ export function createAppPorts(config: AppConfig): AppPorts {
       throw new AdapterUnavailableError('Auth', config.AUTH_PROVIDER, 'Unsupported auth provider');
   }
 
-  return { queue, realtime, llm, blobStore, auth };
+  // 6. Secret Store Port
+  let secretStore;
+  switch (config.SECRET_STORE_PROVIDER) {
+    case 'in_memory':
+      secretStore = new InMemorySecretStoreAdapter();
+      break;
+    case 'aws_secrets_manager':
+      secretStore = new AwsSecretsManagerAdapter({ region: config.AWS_REGION });
+      break;
+    default:
+      throw new AdapterUnavailableError('SecretStore', config.SECRET_STORE_PROVIDER, 'Unsupported secret store provider');
+  }
+
+  // 7. Zoom Client Port
+  let zoomClient;
+  switch (config.ZOOM_CLIENT_PROVIDER) {
+    case 'mock':
+      zoomClient = new MockZoomClientAdapter();
+      break;
+    case 'http':
+      zoomClient = new HttpZoomClientAdapter({
+        clientId: config.ZOOM_CLIENT_ID,
+        clientSecret: config.ZOOM_CLIENT_SECRET,
+        oauthUrl: config.ZOOM_OAUTH_URL,
+        apiUrl: config.ZOOM_API_URL,
+      });
+      break;
+    default:
+      throw new AdapterUnavailableError('ZoomClient', config.ZOOM_CLIENT_PROVIDER, 'Unsupported zoom client provider');
+  }
+
+  return { queue, realtime, llm, blobStore, auth, secretStore, zoomClient };
 }

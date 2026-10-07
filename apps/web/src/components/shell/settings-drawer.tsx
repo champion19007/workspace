@@ -1,17 +1,32 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useParams } from 'next/navigation';
 import { Drawer } from '../ui/drawer';
 import { useShell } from './shell-context';
 import { useTheme, DEFAULT_ACCENT } from '../theme-provider';
 import { RotateCcw, Palette, Cable, Keyboard, Check } from 'lucide-react';
+import type { ZoomIntegrationDTO } from '@workspace/core';
 
 export function SettingsDrawer() {
+  const params = useParams();
+  const orgId = (params?.orgId as string) || '';
+
   const { isSettingsDrawerOpen, setIsSettingsDrawerOpen } = useShell();
   const { accentColor, setAccentColor, resetAccentColor, presets } = useTheme();
 
   const [activeTab, setActiveTab] = useState<'appearance' | 'integrations' | 'shortcuts'>('appearance');
   const [customHex, setCustomHex] = useState(accentColor);
+  const [zoomIntegration, setZoomIntegration] = useState<ZoomIntegrationDTO | null>(null);
+
+  useEffect(() => {
+    if (isSettingsDrawerOpen && activeTab === 'integrations' && orgId) {
+      fetch(`/api/orgs/${orgId}/integrations/zoom`)
+        .then((res) => (res.ok ? res.json() : { integration: null }))
+        .then((data) => setZoomIntegration(data.integration || null))
+        .catch(() => {});
+    }
+  }, [isSettingsDrawerOpen, activeTab, orgId]);
 
   const handleHexChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -166,19 +181,45 @@ export function SettingsDrawer() {
         </div>
       )}
 
-      {/* Tab: Integrations */}
+      {/* Tab: Integrations (Matching Screenshots 946–948) */}
       {activeTab === 'integrations' && (
         <div className="space-y-4">
-          <div className="p-4 rounded-xl bg-panel-elevated border border-border-subtle space-y-2">
+          <div className="p-4 rounded-xl bg-panel-elevated border border-border-subtle space-y-3">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-bold text-foreground">Zoom Video Communications</h4>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                Foundation Ready
-              </span>
+              {zoomIntegration?.status === 'connected' ? (
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Connected
+                </span>
+              ) : zoomIntegration?.status === 'needs_reauthorization' ? (
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  Needs Reauth
+                </span>
+              ) : (
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-500/10 text-slate-400 border border-slate-500/30">
+                  Disconnected
+                </span>
+              )}
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Cloud recording transcript webhook intake and OAuth PKCE configuration. Scheduled for Stage 11–12 integration.
+              Account-level OAuth connection for recording metadata, verified host opt-in, and transcript streaming.
             </p>
+            {zoomIntegration?.accountName && (
+              <div className="text-[11px] text-muted-foreground font-mono bg-panel-inset p-2 rounded-lg border border-border-subtle">
+                Account: {zoomIntegration.accountName}
+              </div>
+            )}
+            {orgId && (
+              <a
+                href={`/orgs/${orgId}/settings`}
+                onClick={() => setIsSettingsDrawerOpen(false)}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent hover:underline pt-1"
+              >
+                <span>Configure Host Opt-In & Permissions →</span>
+              </a>
+            )}
           </div>
 
           <div className="p-4 rounded-xl bg-panel-elevated border border-border-subtle space-y-2">

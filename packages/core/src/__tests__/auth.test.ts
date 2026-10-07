@@ -147,7 +147,8 @@ describe('Auth Domain Core Logic', () => {
       const parts = encrypted.split('.');
 
       // Tamper ciphertext
-      const tamperedCipher = 'x' + parts[1]?.slice(1);
+      const firstChar = parts[1]?.[0] === 'x' ? 'y' : 'x';
+      const tamperedCipher = firstChar + parts[1]?.slice(1);
       const tampered = `${parts[0]}.${tamperedCipher}.${parts[2]}`;
 
       expect(decryptSession(tampered, testSecret)).toBeNull();

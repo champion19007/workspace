@@ -12,6 +12,7 @@ import {
   ForbiddenError,
   ValidationError,
   UnauthorizedError,
+  isValidUuid,
 } from '@workspace/core';
 
 export interface CreateOrgInput {
@@ -479,4 +480,29 @@ export async function removeOrganizationMember(
 
     return deleted;
   });
+}
+
+/**
+ * Fetches an organization by its primary key ID.
+ */
+export async function getOrganizationById(db: DatabaseInstance, id: string) {
+  const [org] = await db
+    .select()
+    .from(orgs)
+    .where(eq(orgs.id, id))
+    .limit(1);
+  return org ?? null;
+}
+
+/**
+ * Fetches an organization by either UUID or slug identifier.
+ */
+export async function getOrganizationByIdOrSlug(db: DatabaseInstance, identifier: string) {
+  const isId = isValidUuid(identifier);
+  const [org] = await db
+    .select({ id: orgs.id, slug: orgs.slug, name: orgs.name })
+    .from(orgs)
+    .where(isId ? eq(orgs.id, identifier) : eq(orgs.slug, identifier))
+    .limit(1);
+  return org ?? null;
 }

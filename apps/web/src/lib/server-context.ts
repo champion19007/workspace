@@ -1,15 +1,17 @@
 import { parseConfig, type AppConfig, type AppPorts } from '@workspace/core';
 import { createAppPorts } from '@workspace/adapters';
-import { createApiClient, type DatabaseInstance } from '@workspace/db';
+import { createApiClient, type DatabaseInstance, type Sql } from '@workspace/db';
 
 let cachedConfig: AppConfig | null = null;
 let cachedPorts: AppPorts | null = null;
 let cachedDb: DatabaseInstance | null = null;
+let cachedSql: Sql | null = null;
 
 export function getServerContext(): {
   config: AppConfig;
   ports: AppPorts;
   db: DatabaseInstance;
+  sql: Sql;
 } {
   if (!cachedConfig) {
     cachedConfig = parseConfig({
@@ -28,17 +30,19 @@ export function getServerContext(): {
     cachedPorts = createAppPorts(cachedConfig);
   }
 
-  if (!cachedDb) {
-    const { db } = createApiClient({
+  if (!cachedDb || !cachedSql) {
+    const { sql, db } = createApiClient({
       connectionString: cachedConfig.DATABASE_URL,
       maxConnections: 5,
     });
     cachedDb = db;
+    cachedSql = sql;
   }
 
   return {
     config: cachedConfig,
     ports: cachedPorts,
     db: cachedDb,
+    sql: cachedSql,
   };
 }

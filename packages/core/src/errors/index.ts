@@ -49,6 +49,12 @@ export class PreconditionFailedError extends DomainError {
   }
 }
 
+export class PreconditionRequiredError extends DomainError {
+  constructor(message = 'If-Match header is required for this operation', details?: unknown) {
+    super(message, 'PRECONDITION_REQUIRED', 428, details);
+  }
+}
+
 export class ValidationError extends DomainError {
   constructor(message = 'Validation failed', details?: unknown) {
     super(message, 'VALIDATION_ERROR', 422, details);
@@ -76,3 +82,32 @@ export class ConfigurationError extends DomainError {
     super(message, 'CONFIGURATION_ERROR', 500, details);
   }
 }
+
+export class RateLimitError extends DomainError {
+  public readonly retryAfterSeconds: number;
+
+  constructor(message = 'Rate limit exceeded. Please retry later.', retryAfterSeconds = 60, details?: unknown) {
+    super(message, 'RATE_LIMIT_EXCEEDED', 429, details);
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+export class IdempotencyConflictError extends DomainError {
+  constructor(message = 'An identical operation is currently being processed', details?: unknown) {
+    super(message, 'IDEMPOTENCY_CONFLICT', 409, details);
+  }
+}
+
+export class IntegrationError extends DomainError {
+  constructor(message = 'Integration error occurred', details?: unknown) {
+    super(message, 'INTEGRATION_ERROR', 502, details);
+  }
+}
+
+export class BudgetExceededError extends DomainError {
+  constructor(message = 'Organization AI budget limit reached', details?: unknown) {
+    super(message, 'BUDGET_EXCEEDED', 422, details);
+  }
+}
+
+export * from './problem-details.js';

@@ -12,6 +12,9 @@
   },
   "dependencies": {
     "@fastify/cors": "^10.0.2",
+    "@fastify/rate-limit": "^11.2.0",
+    "@fastify/swagger": "^9.9.1",
+    "@fastify/swagger-ui": "^6.1.1",
     "@workspace/adapters": "workspace:*",
     "@workspace/core": "workspace:*",
     "@workspace/db": "workspace:*",
@@ -19,6 +22,7 @@
     "fastify": "^5.2.1",
     "fastify-plugin": "^6.0.0",
     "pino": "^9.6.0",
+    "postgres": "^3.4.5",
     "zod": "^3.24.2"
   },
   "devDependencies": {

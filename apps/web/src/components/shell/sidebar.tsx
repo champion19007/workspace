@@ -19,6 +19,7 @@ import {
   Plus,
   Check,
   X,
+  BarChart3,
 } from 'lucide-react';
 import { useShell } from './shell-context';
 import { AccountMenu, UserSessionInfo } from './account-menu';
@@ -241,6 +242,19 @@ export function Sidebar({ currentOrg, availableOrgs = [], user }: SidebarProps) 
               >
                 <FolderGit2 className="w-4 h-4 shrink-0" />
                 <span>Projects</span>
+              </Link>
+
+              <Link
+                href={`/orgs/${currentOrg.id}/leadership`}
+                onClick={() => setIsMobileSidebarOpen(false)}
+                className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                  isActive(`/orgs/${currentOrg.id}/leadership`)
+                    ? 'bg-accent text-accent-foreground font-bold shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-panel'
+                }`}
+              >
+                <BarChart3 className="w-4 h-4 shrink-0" />
+                <span>Leadership</span>
               </Link>
 
               <Link

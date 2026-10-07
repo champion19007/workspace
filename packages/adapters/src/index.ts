@@ -3,4 +3,6 @@ export * from './realtime/index.js';
 export * from './llm/index.js';
 export * from './blob-store/index.js';
 export * from './auth/index.js';
+export * from './secret-store/index.js';
+export * from './zoom/index.js';
 export * from './factory.js';
