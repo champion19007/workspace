@@ -14,6 +14,7 @@ import {
   type TaskDTO,
   type TaskStatus,
   type TaskPriority,
+  type TaskSource,
   type TaskLabelDTO,
   type TaskAssigneeDTO,
   type CreateTaskInput,
@@ -89,7 +90,7 @@ export async function verifyProjectAccess(
   return project;
 }
 
-async function verifyAssigneeAccess(
+export async function verifyAssigneeAccess(
   sql: any,
   params: {
     orgId: string;
@@ -258,136 +259,155 @@ export async function createTask(
 
   const rawSql = getRawSql(db);
 
-  return await rawSql.begin(async (sql: any) => {
-    // 1. Verify project exists, belongs to org, and user has access
-    const project = await verifyProjectAccess(sql, {
-      orgId: params.orgId,
-      projectId: params.input.projectId,
-      userId: params.actorUserId,
-      role: params.role,
-    });
+  return await rawSql.begin((sql: any) => createTaskInTransaction(sql, params));
+}
 
-    // 2. Verify assignee belongs to org and has project access
-    if (params.input.assigneeId) {
-      await verifyAssigneeAccess(sql, {
-        orgId: params.orgId,
-        projectId: project.id,
-        assigneeId: params.input.assigneeId,
-        projectVisibility: project.visibility,
-      });
-    }
+/**
+ * Task creation body shared by manual creation and approved AI suggestions (Stage 17).
+ * Must run inside the caller's transaction. `provenance` is server-set only; clients cannot forge it.
+ */
+export async function createTaskInTransaction(
+  sql: any,
+  params: {
+    orgId: string;
+    actorUserId: string;
+    role: string;
+    input: CreateTaskInput;
+    provenance?: { source: Exclude<TaskSource, 'manual'>; sourceRef: string };
+  }
+): Promise<TaskDTO> {
+  if (params.role === 'viewer') {
+    throw new ForbiddenError('Viewers are not permitted to create tasks');
+  }
+  // 1. Verify project exists, belongs to org, and user has access
+  const project = await verifyProjectAccess(sql, {
+    orgId: params.orgId,
+    projectId: params.input.projectId,
+    userId: params.actorUserId,
+    role: params.role,
+  });
 
-    // 3. Verify labels belong to the organisation
-    if (params.input.labelIds && params.input.labelIds.length > 0) {
-      await verifyLabelOwnership(sql, {
-        orgId: params.orgId,
-        labelIds: params.input.labelIds,
-      });
-    }
-
-    // 4. Validate & lock parent task if creating a subtask
-    if (params.input.parentTaskId) {
-      await validateAndLockParentTask(sql, {
-        orgId: params.orgId,
-        projectId: project.id,
-        parentTaskId: params.input.parentTaskId,
-      });
-    }
-
-    // 5. Allocate atomic sequential task key (e.g. ENG-142)
-    const taskKey = await allocateTaskKey(sql, {
+  // 2. Verify assignee belongs to org and has project access
+  if (params.input.assigneeId) {
+    await verifyAssigneeAccess(sql, {
       orgId: params.orgId,
       projectId: project.id,
-      projectName: project.name,
-      keyPrefix: project.keyPrefix,
+      assigneeId: params.input.assigneeId,
+      projectVisibility: project.visibility,
     });
+  }
 
-    // 6. Create task row with rank positioned after the last task in this column
-    const taskId = generateUuidV7();
-    const [lastTask] = await sql<{ rank: string }[]>`
-      SELECT rank FROM tasks
-      WHERE org_id = ${params.orgId}
-        AND project_id = ${project.id}
-        AND status = ${params.input.status || 'todo'}
-        AND ${params.input.parentTaskId ? sql`parent_task_id = ${params.input.parentTaskId}` : sql`parent_task_id IS NULL`}
-        AND archived_at IS NULL
-      ORDER BY rank COLLATE "C" DESC, id DESC
-      LIMIT 1
-    `;
-    const rank = lastTask ? generateRankBetween(lastTask.rank, null) : generateInitialRank();
+  // 3. Verify labels belong to the organisation
+  if (params.input.labelIds && params.input.labelIds.length > 0) {
+    await verifyLabelOwnership(sql, {
+      orgId: params.orgId,
+      labelIds: params.input.labelIds,
+    });
+  }
 
-    await sql`
-      INSERT INTO tasks (
-        id, org_id, project_id, parent_task_id, key, title, description,
-        status, priority, assignee_id, due_date, rank, version,
-        source, source_ref, created_by, created_at, updated_at
-      ) VALUES (
-        ${taskId}, ${params.orgId}, ${project.id}, ${params.input.parentTaskId || null},
-        ${taskKey}, ${params.input.title}, ${params.input.description || null},
-        ${params.input.status || 'todo'}, ${params.input.priority || 'medium'},
-        ${params.input.assigneeId || null}, ${params.input.dueDate || null},
-        ${rank}, 1, 'manual', NULL, ${params.actorUserId}, NOW(), NOW()
-      )
-    `;
+  // 4. Validate & lock parent task if creating a subtask
+  if (params.input.parentTaskId) {
+    await validateAndLockParentTask(sql, {
+      orgId: params.orgId,
+      projectId: project.id,
+      parentTaskId: params.input.parentTaskId,
+    });
+  }
 
-    // 7. Associate labels
-    if (params.input.labelIds && params.input.labelIds.length > 0) {
-      for (const labelId of params.input.labelIds) {
-        await sql`
-          INSERT INTO task_labels (org_id, task_id, label_id, created_at)
-          VALUES (${params.orgId}, ${taskId}, ${labelId}, NOW())
-          ON CONFLICT DO NOTHING
-        `;
-      }
+  // 5. Allocate atomic sequential task key (e.g. ENG-142)
+  const taskKey = await allocateTaskKey(sql, {
+    orgId: params.orgId,
+    projectId: project.id,
+    projectName: project.name,
+    keyPrefix: project.keyPrefix,
+  });
+
+  // 6. Create task row with rank positioned after the last task in this column
+  const taskId = generateUuidV7();
+  const [lastTask] = await sql<{ rank: string }[]>`
+    SELECT rank FROM tasks
+    WHERE org_id = ${params.orgId}
+      AND project_id = ${project.id}
+      AND status = ${params.input.status || 'todo'}
+      AND ${params.input.parentTaskId ? sql`parent_task_id = ${params.input.parentTaskId}` : sql`parent_task_id IS NULL`}
+      AND archived_at IS NULL
+    ORDER BY rank COLLATE "C" DESC, id DESC
+    LIMIT 1
+  `;
+  const rank = lastTask ? generateRankBetween(lastTask.rank, null) : generateInitialRank();
+
+  await sql`
+    INSERT INTO tasks (
+      id, org_id, project_id, parent_task_id, key, title, description,
+      status, priority, assignee_id, due_date, rank, version,
+      source, source_ref, created_by, created_at, updated_at
+    ) VALUES (
+      ${taskId}, ${params.orgId}, ${project.id}, ${params.input.parentTaskId || null},
+      ${taskKey}, ${params.input.title}, ${params.input.description || null},
+      ${params.input.status || 'todo'}, ${params.input.priority || 'medium'},
+      ${params.input.assigneeId || null}, ${params.input.dueDate || null},
+      ${rank}, 1, ${params.provenance?.source ?? 'manual'}, ${params.provenance?.sourceRef ?? null},
+      ${params.actorUserId}, NOW(), NOW()
+    )
+  `;
+
+  // 7. Associate labels
+  if (params.input.labelIds && params.input.labelIds.length > 0) {
+    for (const labelId of params.input.labelIds) {
+      await sql`
+        INSERT INTO task_labels (org_id, task_id, label_id, created_at)
+        VALUES (${params.orgId}, ${taskId}, ${labelId}, NOW())
+        ON CONFLICT DO NOTHING
+      `;
     }
+  }
 
-    // 8. Transactional outbox event
+  // 8. Transactional outbox event
+  await insertOutboxEvent(sql, {
+    orgId: params.orgId,
+    topic: 'task.created',
+    payload: {
+      taskId,
+      key: taskKey,
+      projectId: project.id,
+      orgId: params.orgId,
+      title: params.input.title,
+      version: 1,
+      status: params.input.status || 'todo',
+      priority: params.input.priority || 'medium',
+      assigneeId: params.input.assigneeId || null,
+      createdBy: params.actorUserId,
+    },
+  });
+
+  // If assignee set, record task.assigned event as well
+  if (params.input.assigneeId) {
     await insertOutboxEvent(sql, {
       orgId: params.orgId,
-      topic: 'task.created',
+      topic: 'task.assigned',
       payload: {
         taskId,
         key: taskKey,
         projectId: project.id,
         orgId: params.orgId,
-        title: params.input.title,
-        version: 1,
-        status: params.input.status || 'todo',
-        priority: params.input.priority || 'medium',
-        assigneeId: params.input.assigneeId || null,
-        createdBy: params.actorUserId,
+        previousAssigneeId: null,
+        newAssigneeId: params.input.assigneeId,
+        actorUserId: params.actorUserId,
       },
     });
+  }
 
-    // If assignee set, record task.assigned event as well
-    if (params.input.assigneeId) {
-      await insertOutboxEvent(sql, {
-        orgId: params.orgId,
-        topic: 'task.assigned',
-        payload: {
-          taskId,
-          key: taskKey,
-          projectId: project.id,
-          orgId: params.orgId,
-          previousAssigneeId: null,
-          newAssigneeId: params.input.assigneeId,
-          actorUserId: params.actorUserId,
-        },
-      });
-    }
+  // Invalidate project and ancestor team rollups
+  await markNodesDirty(sql, {
+    orgId: params.orgId,
+    nodeIds: [project.id],
+  });
 
-    // Invalidate project and ancestor team rollups
-    await markNodesDirty(sql, {
-      orgId: params.orgId,
-      nodeIds: [project.id],
-    });
-
-    return await getTaskById(sql, {
-      orgId: params.orgId,
-      taskId,
-      userId: params.actorUserId,
-      role: params.role,
-    });
+  return await getTaskById(sql, {
+    orgId: params.orgId,
+    taskId,
+    userId: params.actorUserId,
+    role: params.role,
   });
 }
 
@@ -802,170 +822,189 @@ export async function updateTask(
 
   const rawSql = getRawSql(db);
 
-  return await rawSql.begin(async (sql: any) => {
-    // 1. Fetch current task with project info & verify read access first
-    const currentTask = await getTaskById(sql, {
+  return await rawSql.begin((sql: any) => updateTaskInTransaction(sql, params));
+}
+
+/**
+ * Versioned task update body shared by PATCH /tasks and approved update_task suggestions (Stage 17).
+ * Must run inside the caller's transaction.
+ */
+export async function updateTaskInTransaction(
+  sql: any,
+  params: {
+    orgId: string;
+    taskId: string;
+    actorUserId: string;
+    role: string;
+    ifMatchVersion: number;
+    input: UpdateTaskInput;
+  }
+): Promise<TaskDTO> {
+  if (params.role === 'viewer') {
+    throw new ForbiddenError('Viewers are not permitted to modify tasks');
+  }
+  // 1. Fetch current task with project info & verify read access first
+  const currentTask = await getTaskById(sql, {
+    orgId: params.orgId,
+    taskId: params.taskId,
+    userId: params.actorUserId,
+    role: params.role,
+  });
+
+  // 2. Strict optimistic concurrency check against current task version
+  if (currentTask.version !== params.ifMatchVersion) {
+    throw new PreconditionFailedError(
+      `Version conflict: task has been updated to version ${currentTask.version} (requested version ${params.ifMatchVersion})`,
+      currentTask
+    );
+  }
+
+  const project = await verifyProjectAccess(sql, {
+    orgId: params.orgId,
+    projectId: currentTask.projectId,
+    userId: params.actorUserId,
+    role: params.role,
+  });
+
+  // 3. Verify assignee access if being updated
+  if (params.input.assigneeId !== undefined && params.input.assigneeId !== null) {
+    await verifyAssigneeAccess(sql, {
+      orgId: params.orgId,
+      projectId: currentTask.projectId,
+      assigneeId: params.input.assigneeId,
+      projectVisibility: project.visibility,
+    });
+  }
+
+  // 4. Validate & lock parent task if reparenting
+  if (params.input.parentTaskId !== undefined && params.input.parentTaskId !== currentTask.parentTaskId) {
+    if (params.input.parentTaskId !== null) {
+      await validateAndLockParentTask(sql, {
+        orgId: params.orgId,
+        projectId: currentTask.projectId,
+        parentTaskId: params.input.parentTaskId,
+        currentTaskId: params.taskId,
+      });
+    }
+  }
+
+  // 5. Verify labels ownership if provided
+  if (params.input.labelIds !== undefined) {
+    await verifyLabelOwnership(sql, {
+      orgId: params.orgId,
+      labelIds: params.input.labelIds,
+    });
+  }
+
+  // 6. Build changed fields list for outbox tracking
+  const changedFields: string[] = [];
+  if (params.input.title !== undefined && params.input.title !== currentTask.title) changedFields.push('title');
+  if (params.input.description !== undefined && params.input.description !== currentTask.description) changedFields.push('description');
+  if (params.input.status !== undefined && params.input.status !== currentTask.status) changedFields.push('status');
+  if (params.input.priority !== undefined && params.input.priority !== currentTask.priority) changedFields.push('priority');
+  if (params.input.assigneeId !== undefined && params.input.assigneeId !== currentTask.assigneeId) changedFields.push('assigneeId');
+  if (params.input.dueDate !== undefined && params.input.dueDate !== currentTask.dueDate) changedFields.push('dueDate');
+  if (params.input.parentTaskId !== undefined && params.input.parentTaskId !== currentTask.parentTaskId) changedFields.push('parentTaskId');
+  if (params.input.rank !== undefined && params.input.rank !== currentTask.rank) changedFields.push('rank');
+  if (params.input.labelIds !== undefined) changedFields.push('labels');
+
+  // 7. Atomic update statement requiring WHERE version = expectedVersion
+  const title = params.input.title !== undefined ? params.input.title : currentTask.title;
+  const description = params.input.description !== undefined ? params.input.description : currentTask.description;
+  const status = params.input.status !== undefined ? params.input.status : currentTask.status;
+  const priority = params.input.priority !== undefined ? params.input.priority : currentTask.priority;
+  const assigneeId = params.input.assigneeId !== undefined ? params.input.assigneeId : currentTask.assigneeId;
+  const dueDate = params.input.dueDate !== undefined ? params.input.dueDate : currentTask.dueDate;
+  const parentTaskId = params.input.parentTaskId !== undefined ? params.input.parentTaskId : currentTask.parentTaskId;
+  const rank = params.input.rank !== undefined ? params.input.rank : currentTask.rank;
+
+  const [updated] = await sql`
+    UPDATE tasks
+    SET title = ${title},
+        description = ${description},
+        status = ${status},
+        priority = ${priority},
+        assignee_id = ${assigneeId},
+        due_date = ${dueDate},
+        parent_task_id = ${parentTaskId},
+        rank = ${rank},
+        version = version + 1,
+        updated_at = NOW()
+    WHERE org_id = ${params.orgId} AND id = ${params.taskId} AND version = ${params.ifMatchVersion}
+    RETURNING *
+  `;
+
+  if (!updated) {
+    // Version collision between fetch and atomic update
+    const fresh = await getTaskById(sql, {
       orgId: params.orgId,
       taskId: params.taskId,
       userId: params.actorUserId,
       role: params.role,
     });
+    throw new PreconditionFailedError(
+      `Concurrent modification detected: task was updated by another request`,
+      fresh
+    );
+  }
 
-    // 2. Strict optimistic concurrency check against current task version
-    if (currentTask.version !== params.ifMatchVersion) {
-      throw new PreconditionFailedError(
-        `Version conflict: task has been updated to version ${currentTask.version} (requested version ${params.ifMatchVersion})`,
-        currentTask
-      );
-    }
-
-    const project = await verifyProjectAccess(sql, {
-      orgId: params.orgId,
-      projectId: currentTask.projectId,
-      userId: params.actorUserId,
-      role: params.role,
-    });
-
-    // 3. Verify assignee access if being updated
-    if (params.input.assigneeId !== undefined && params.input.assigneeId !== null) {
-      await verifyAssigneeAccess(sql, {
-        orgId: params.orgId,
-        projectId: currentTask.projectId,
-        assigneeId: params.input.assigneeId,
-        projectVisibility: project.visibility,
-      });
-    }
-
-    // 4. Validate & lock parent task if reparenting
-    if (params.input.parentTaskId !== undefined && params.input.parentTaskId !== currentTask.parentTaskId) {
-      if (params.input.parentTaskId !== null) {
-        await validateAndLockParentTask(sql, {
-          orgId: params.orgId,
-          projectId: currentTask.projectId,
-          parentTaskId: params.input.parentTaskId,
-          currentTaskId: params.taskId,
-        });
-      }
-    }
-
-    // 5. Verify labels ownership if provided
-    if (params.input.labelIds !== undefined) {
-      await verifyLabelOwnership(sql, {
-        orgId: params.orgId,
-        labelIds: params.input.labelIds,
-      });
-    }
-
-    // 6. Build changed fields list for outbox tracking
-    const changedFields: string[] = [];
-    if (params.input.title !== undefined && params.input.title !== currentTask.title) changedFields.push('title');
-    if (params.input.description !== undefined && params.input.description !== currentTask.description) changedFields.push('description');
-    if (params.input.status !== undefined && params.input.status !== currentTask.status) changedFields.push('status');
-    if (params.input.priority !== undefined && params.input.priority !== currentTask.priority) changedFields.push('priority');
-    if (params.input.assigneeId !== undefined && params.input.assigneeId !== currentTask.assigneeId) changedFields.push('assigneeId');
-    if (params.input.dueDate !== undefined && params.input.dueDate !== currentTask.dueDate) changedFields.push('dueDate');
-    if (params.input.parentTaskId !== undefined && params.input.parentTaskId !== currentTask.parentTaskId) changedFields.push('parentTaskId');
-    if (params.input.rank !== undefined && params.input.rank !== currentTask.rank) changedFields.push('rank');
-    if (params.input.labelIds !== undefined) changedFields.push('labels');
-
-    // 7. Atomic update statement requiring WHERE version = expectedVersion
-    const title = params.input.title !== undefined ? params.input.title : currentTask.title;
-    const description = params.input.description !== undefined ? params.input.description : currentTask.description;
-    const status = params.input.status !== undefined ? params.input.status : currentTask.status;
-    const priority = params.input.priority !== undefined ? params.input.priority : currentTask.priority;
-    const assigneeId = params.input.assigneeId !== undefined ? params.input.assigneeId : currentTask.assigneeId;
-    const dueDate = params.input.dueDate !== undefined ? params.input.dueDate : currentTask.dueDate;
-    const parentTaskId = params.input.parentTaskId !== undefined ? params.input.parentTaskId : currentTask.parentTaskId;
-    const rank = params.input.rank !== undefined ? params.input.rank : currentTask.rank;
-
-    const [updated] = await sql`
-      UPDATE tasks
-      SET title = ${title},
-          description = ${description},
-          status = ${status},
-          priority = ${priority},
-          assignee_id = ${assigneeId},
-          due_date = ${dueDate},
-          parent_task_id = ${parentTaskId},
-          rank = ${rank},
-          version = version + 1,
-          updated_at = NOW()
-      WHERE org_id = ${params.orgId} AND id = ${params.taskId} AND version = ${params.ifMatchVersion}
-      RETURNING *
+  // 8. Update task_labels if labels specified
+  if (params.input.labelIds !== undefined) {
+    await sql`
+      DELETE FROM task_labels
+      WHERE org_id = ${params.orgId} AND task_id = ${params.taskId}
     `;
-
-    if (!updated) {
-      // Version collision between fetch and atomic update
-      const fresh = await getTaskById(sql, {
-        orgId: params.orgId,
-        taskId: params.taskId,
-        userId: params.actorUserId,
-        role: params.role,
-      });
-      throw new PreconditionFailedError(
-        `Concurrent modification detected: task was updated by another request`,
-        fresh
-      );
-    }
-
-    // 8. Update task_labels if labels specified
-    if (params.input.labelIds !== undefined) {
+    for (const labelId of params.input.labelIds) {
       await sql`
-        DELETE FROM task_labels
-        WHERE org_id = ${params.orgId} AND task_id = ${params.taskId}
+        INSERT INTO task_labels (org_id, task_id, label_id, created_at)
+        VALUES (${params.orgId}, ${params.taskId}, ${labelId}, NOW())
+        ON CONFLICT DO NOTHING
       `;
-      for (const labelId of params.input.labelIds) {
-        await sql`
-          INSERT INTO task_labels (org_id, task_id, label_id, created_at)
-          VALUES (${params.orgId}, ${params.taskId}, ${labelId}, NOW())
-          ON CONFLICT DO NOTHING
-        `;
-      }
     }
+  }
 
-    // 9. Outbox events
+  // 9. Outbox events
+  await insertOutboxEvent(sql, {
+    orgId: params.orgId,
+    topic: 'task.updated',
+    payload: {
+      taskId: params.taskId,
+      key: currentTask.key,
+      projectId: currentTask.projectId,
+      orgId: params.orgId,
+      version: updated.version,
+      changedFields,
+      actorUserId: params.actorUserId,
+    },
+  });
+
+  if (params.input.assigneeId !== undefined && params.input.assigneeId !== currentTask.assigneeId) {
     await insertOutboxEvent(sql, {
       orgId: params.orgId,
-      topic: 'task.updated',
+      topic: 'task.assigned',
       payload: {
         taskId: params.taskId,
         key: currentTask.key,
         projectId: currentTask.projectId,
         orgId: params.orgId,
-        version: updated.version,
-        changedFields,
+        previousAssigneeId: currentTask.assigneeId,
+        newAssigneeId: params.input.assigneeId,
         actorUserId: params.actorUserId,
       },
     });
+  }
 
-    if (params.input.assigneeId !== undefined && params.input.assigneeId !== currentTask.assigneeId) {
-      await insertOutboxEvent(sql, {
-        orgId: params.orgId,
-        topic: 'task.assigned',
-        payload: {
-          taskId: params.taskId,
-          key: currentTask.key,
-          projectId: currentTask.projectId,
-          orgId: params.orgId,
-          previousAssigneeId: currentTask.assigneeId,
-          newAssigneeId: params.input.assigneeId,
-          actorUserId: params.actorUserId,
-        },
-      });
-    }
+  // Invalidate project and ancestor team rollups
+  await markNodesDirty(sql, {
+    orgId: params.orgId,
+    nodeIds: [currentTask.projectId],
+  });
 
-    // Invalidate project and ancestor team rollups
-    await markNodesDirty(sql, {
-      orgId: params.orgId,
-      nodeIds: [currentTask.projectId],
-    });
-
-    return await getTaskById(sql, {
-      orgId: params.orgId,
-      taskId: params.taskId,
-      userId: params.actorUserId,
-      role: params.role,
-    });
+  return await getTaskById(sql, {
+    orgId: params.orgId,
+    taskId: params.taskId,
+    userId: params.actorUserId,
+    role: params.role,
   });
 }
 

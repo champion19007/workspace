@@ -4,6 +4,7 @@ import {
   varchar,
   text,
   integer,
+  bigint,
   numeric,
   boolean,
   timestamp,
@@ -157,7 +158,7 @@ export const tasks = pgTable(
     rank: varchar('rank', { length: 128 }).notNull().default('a0'), // base-62 fractional index string (C collation)
     version: integer('version').notNull().default(1), // If-Match concurrency version
     source: varchar('source', { length: 32 }).notNull().default('manual'), // manual | zoom_meeting
-    sourceRef: varchar('source_ref', { length: 128 }),
+    sourceRef: varchar('source_ref', { length: 1024 }),
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -439,10 +440,18 @@ export const actionItems = pgTable(
     decidedBy: uuid('decided_by').references(() => users.id, { onDelete: 'set null' }),
     decidedAt: timestamp('decided_at', { withTimezone: true }),
     extractionRunId: uuid('extraction_run_id').references(() => extractionRuns.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull().default(1),
+    decisionReason: varchar('decision_reason', { length: 32 }), // wrong | duplicate | not_a_task | other
+    decisionNote: text('decision_note'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    uniqueIndex('uq_action_items_org_id').on(table.orgId, table.id),
+    index('idx_action_items_org_state_created').on(table.orgId, table.state, table.createdAt, table.id),
+    index('idx_action_items_inbox_open')
+      .on(table.orgId, table.suggestedOwnerId, table.createdAt, table.id)
+      .where(sql`${table.state} = 'suggested'`),
     index('idx_action_items_meeting').on(table.meetingId),
     index('idx_action_items_meeting_state').on(table.meetingId, table.state),
     index('idx_action_items_org_suggested_owner').on(table.orgId, table.suggestedOwnerId),
@@ -450,6 +459,47 @@ export const actionItems = pgTable(
     index('idx_action_items_validation_status').on(table.meetingId, table.validationStatus),
     check('chk_action_item_state', sql`${table.state} IN ('suggested', 'approved', 'edited', 'rejected')`),
     check('chk_action_item_proposal_type', sql`${table.proposalType} IN ('create_task', 'update_task')`),
+    check(
+      'chk_action_item_decision_reason',
+      sql`${table.decisionReason} IS NULL OR ${table.decisionReason} IN ('wrong', 'duplicate', 'not_a_task', 'other')`
+    ),
+  ]
+);
+
+// 13a. Action Item Decisions (append-only human decision log for eval curation, Stage 17)
+export const actionItemDecisions = pgTable(
+  'action_item_decisions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    actionItemId: uuid('action_item_id').notNull(),
+    meetingId: uuid('meeting_id').notNull(),
+    decision: varchar('decision', { length: 16 }).notNull(), // approve | edit | reject
+    reason: varchar('reason', { length: 32 }),
+    note: text('note'),
+    proposalSnapshot: jsonb('proposal_snapshot').notNull(),
+    appliedValues: jsonb('applied_values'),
+    editSummary: jsonb('edit_summary').notNull().default({}),
+    titleEditDistance: numeric('title_edit_distance', { precision: 5, scale: 4 }),
+    timeToDecisionMs: bigint('time_to_decision_ms', { mode: 'number' }).notNull(),
+    taskId: uuid('task_id'),
+    taskOperation: varchar('task_operation', { length: 16 }), // created | updated
+    decidedBy: uuid('decided_by').references(() => users.id, { onDelete: 'set null' }),
+    decidedAt: timestamp('decided_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uq_action_item_decisions_item').on(table.orgId, table.actionItemId),
+    index('idx_action_item_decisions_org_decided').on(table.orgId, table.decidedAt),
+    index('idx_action_item_decisions_meeting').on(table.orgId, table.meetingId),
+    check('chk_action_item_decisions_decision', sql`${table.decision} IN ('approve', 'edit', 'reject')`),
+    check(
+      'chk_action_item_decisions_reason',
+      sql`${table.reason} IS NULL OR ${table.reason} IN ('wrong', 'duplicate', 'not_a_task', 'other')`
+    ),
+    check(
+      'chk_action_item_decisions_task_operation',
+      sql`${table.taskOperation} IS NULL OR ${table.taskOperation} IN ('created', 'updated')`
+    ),
   ]
 );
 

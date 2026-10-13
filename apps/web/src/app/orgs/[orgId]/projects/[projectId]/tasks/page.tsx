@@ -102,6 +102,15 @@ export default function ProjectTasksPage() {
     loadProjectAndTasks();
   }, [loadProjectAndTasks]);
 
+  // Deep link (?task=<id>) used by approved meeting suggestions.
+  useEffect(() => {
+    const linkedTaskId = new URLSearchParams(window.location.search).get('task');
+    if (linkedTaskId) {
+      setSelectedTaskId(linkedTaskId);
+      setIsDrawerOpen(true);
+    }
+  }, []);
+
   // 2. Filter tasks
   const filteredTasks = tasks.filter((task) => {
     const matchesSearch =

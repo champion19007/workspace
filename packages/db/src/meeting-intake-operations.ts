@@ -231,7 +231,7 @@ export async function processZoomWebhookEvent(
     // Invalidate and delete secret from SecretStore immediately
     try {
       await secretStore.deleteSecret(current.secret_arn);
-    } catch (_delErr) {
+    } catch {
       // Best-effort cleanup
     }
 
@@ -287,8 +287,9 @@ export async function processZoomWebhookEvent(
       consent_status: string;
       admin_disabled: boolean;
       consent_timestamp: Date | string | null;
+      user_id: string | null;
     }>>`
-      SELECT consent_status, admin_disabled, consent_timestamp
+      SELECT consent_status, admin_disabled, consent_timestamp, user_id
       FROM zoom_host_consents
       WHERE org_id = ${integration.org_id}
         AND zoom_user_id = ${hostId || ''}
@@ -296,6 +297,9 @@ export async function processZoomWebhookEvent(
     `;
 
     const hostConsent = hostConsents.length > 0 ? hostConsents[0]! : null;
+    // Verified identity binding: the workspace user who claimed this Zoom host through authenticated
+    // self-service consent. Never derived from an email comparison.
+    const boundHostUserId = hostConsent?.user_id ?? null;
 
     // Check if transcript file exists in recording_files
     const recordingFiles = Array.isArray(obj.recording_files) ? obj.recording_files : [];
@@ -396,6 +400,7 @@ export async function processZoomWebhookEvent(
             provider_numeric_id = COALESCE(${numericId}, provider_numeric_id),
             zoom_host_id = COALESCE(${hostId}, zoom_host_id),
             zoom_host_email = COALESCE(${hostEmail}, zoom_host_email),
+            host_id = COALESCE(${boundHostUserId}, host_id),
             actual_start_at = COALESCE(${startTimeISO}, actual_start_at),
             duration_seconds = COALESCE(${durationSeconds}, duration_seconds),
             timezone = COALESCE(${timezone}, timezone),
@@ -432,6 +437,7 @@ export async function processZoomWebhookEvent(
             title,
             zoom_host_id,
             zoom_host_email,
+            host_id,
             actual_start_at,
             duration_seconds,
             timezone,
@@ -451,6 +457,7 @@ export async function processZoomWebhookEvent(
             ${topic},
             ${hostId},
             ${hostEmail},
+            ${boundHostUserId},
             ${startTimeISO},
             ${durationSeconds},
             ${timezone},
@@ -703,7 +710,7 @@ export async function pollZoomRecordingsForOrg(
         });
         advancedCount++;
       }
-    } catch (_pendingErr) {
+    } catch {
       // Ignore not ready
     }
   }
@@ -798,10 +805,7 @@ export async function listOrgMeetings(
           AND m.status = ${status}
           AND (LOWER(m.title) LIKE ${queryPattern} OR m.provider_numeric_id LIKE ${queryPattern})
           AND (
-            (m.node_id IS NULL AND (
-              m.host_id = ${userId}
-              OR (m.host_id IS NULL AND m.zoom_host_email = (SELECT email FROM users WHERE id = ${userId} LIMIT 1))
-            ))
+            (m.node_id IS NULL AND m.host_id = ${userId})
             OR
             (m.node_id IS NOT NULL AND (
               EXISTS (
@@ -824,10 +828,7 @@ export async function listOrgMeetings(
         WHERE m.org_id = ${orgId}
           AND m.status = ${status}
           AND (
-            (m.node_id IS NULL AND (
-              m.host_id = ${userId}
-              OR (m.host_id IS NULL AND m.zoom_host_email = (SELECT email FROM users WHERE id = ${userId} LIMIT 1))
-            ))
+            (m.node_id IS NULL AND m.host_id = ${userId})
             OR
             (m.node_id IS NOT NULL AND (
               EXISTS (
@@ -850,10 +851,7 @@ export async function listOrgMeetings(
         WHERE m.org_id = ${orgId}
           AND (LOWER(m.title) LIKE ${queryPattern} OR m.provider_numeric_id LIKE ${queryPattern})
           AND (
-            (m.node_id IS NULL AND (
-              m.host_id = ${userId}
-              OR (m.host_id IS NULL AND m.zoom_host_email = (SELECT email FROM users WHERE id = ${userId} LIMIT 1))
-            ))
+            (m.node_id IS NULL AND m.host_id = ${userId})
             OR
             (m.node_id IS NOT NULL AND (
               EXISTS (
@@ -875,10 +873,7 @@ export async function listOrgMeetings(
         SELECT m.* FROM meetings m
         WHERE m.org_id = ${orgId}
           AND (
-            (m.node_id IS NULL AND (
-              m.host_id = ${userId}
-              OR (m.host_id IS NULL AND m.zoom_host_email = (SELECT email FROM users WHERE id = ${userId} LIMIT 1))
-            ))
+            (m.node_id IS NULL AND m.host_id = ${userId})
             OR
             (m.node_id IS NOT NULL AND (
               EXISTS (
@@ -1129,16 +1124,8 @@ export async function authorizeMeetingAccess(
   }
 
   // 3. Unrouted meetings: follow the verified host boundary
-  let isVerifiedHost = meeting.hostId === userId;
-  if (!isVerifiedHost && !meeting.hostId && meeting.zoomHostEmail) {
-    const userRows = await sql<Array<{ email: string }>>`
-      SELECT email FROM users WHERE id = ${userId} LIMIT 1
-    `;
-    if (userRows[0] && userRows[0].email.toLowerCase() === meeting.zoomHostEmail.toLowerCase()) {
-      isVerifiedHost = true;
-    }
-  }
-  if (!isVerifiedHost) {
+  // Only a verified identity binding (meetings.host_id) counts; no email comparison fallback.
+  if (meeting.hostId !== userId) {
     const errorMessage =
       userRole === 'viewer'
         ? 'Viewers cannot access meeting transcripts for meetings they did not host'

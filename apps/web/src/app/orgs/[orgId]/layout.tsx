@@ -45,12 +45,13 @@ export default function OrgLayout({
           return;
         }
         const sessionData = await sessionRes.json();
-        if (!sessionData.authenticated || !sessionData.session) {
+        if (!sessionData.authenticated || !sessionData.user) {
           router.push('/auth/login');
           return;
         }
 
-        const sess = sessionData.session;
+        // Shape returned by GET /api/auth/session: { authenticated, user: { id, email }, role, ... }
+        const sess = { userId: sessionData.user.id, email: sessionData.user.email, role: sessionData.role };
         setUser({
           id: sess.userId,
           email: sess.email,

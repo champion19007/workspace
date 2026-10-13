@@ -23,12 +23,11 @@ import {
   ListChecks,
   HelpCircle,
   ExternalLink,
-  GitMerge,
-  PlusCircle,
   AlertCircle,
 } from 'lucide-react';
 import { Drawer } from '@/components/ui/drawer';
 import { Dialog } from '@/components/ui/dialog';
+import { ActionItemCard } from '@/components/approvals/ActionItemCard';
 import type {
   ZoomMeetingDTO,
   NormalizedTranscriptSegment,
@@ -256,6 +255,18 @@ export function MeetingDetailDrawer({
     }
   }, [isOpen, meeting, fetchTranscript, fetchSpeakers, fetchCandidates, fetchMembers, fetchNotes]);
 
+  // Hooks must run before the early return below (meeting goes null -> value when a row is opened).
+  const filteredSegments = useMemo(() => {
+    if (!transcriptSearch.trim()) return segments;
+    const q = transcriptSearch.toLowerCase().trim();
+    return segments.filter(
+      (s) =>
+        s.text.toLowerCase().includes(q) ||
+        s.speakerLabel.toLowerCase().includes(q) ||
+        String(s.seq) === q
+    );
+  }, [segments, transcriptSearch]);
+
   if (!meeting) return null;
 
   const handleCopyUuid = () => {
@@ -428,17 +439,6 @@ export function MeetingDetailDrawer({
       setIsResolvingGuestConsent(false);
     }
   };
-
-  const filteredSegments = useMemo(() => {
-    if (!transcriptSearch.trim()) return segments;
-    const q = transcriptSearch.toLowerCase().trim();
-    return segments.filter(
-      (s) =>
-        s.text.toLowerCase().includes(q) ||
-        s.speakerLabel.toLowerCase().includes(q) ||
-        String(s.seq) === q
-    );
-  }, [segments, transcriptSearch]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -716,205 +716,35 @@ export function MeetingDetailDrawer({
                     </div>
                   )}
 
-                  {/* Staged Suggested Action Items (Requirement N-1) */}
-                  {/* Staged Suggested Action Items (Stage 16 Proposal Preview) */}
+                  {/* Suggested actions with human decisions (Requirement N-2) */}
                   {actionItems.length > 0 && (() => {
                     const validItems = actionItems.filter((i) => i.validationStatus !== 'invalid_evidence');
                     const invalidItems = actionItems.filter((i) => i.validationStatus === 'invalid_evidence');
+                    const pending = validItems.filter((i) => i.state === 'suggested').length;
 
                     return (
                       <div className="space-y-3">
                         <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center justify-between">
                           <span className="flex items-center gap-1">
                             <ListChecks className="w-3.5 h-3.5 text-sky-400" />
-                            Staged Proposal Review Queue ({validItems.length})
+                            Suggested Actions ({pending} awaiting decision)
                           </span>
-                          <span className="text-[10px] text-muted-foreground font-mono">
-                            Stage 16 • Zero Task Mutations
+                          <span className="text-[10px] text-muted-foreground normal-case tracking-normal">
+                            Tasks change only after a human decision
                           </span>
                         </div>
 
-                        {/* Valid Staged Proposals */}
                         <div className="space-y-2.5">
                           {validItems.map((item) => (
-                            <div
+                            <ActionItemCard
                               key={item.id}
-                              className="p-3.5 rounded-lg bg-panel border border-border-subtle hover:border-accent/30 transition-colors space-y-2.5 text-xs"
-                            >
-                              {/* Header: Proposal Type & Badges */}
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="space-y-1">
-                                  <div className="flex items-center gap-2">
-                                    {item.proposalType === 'update_task' ? (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30">
-                                        <GitMerge className="w-3 h-3" />
-                                        Update Task Proposal
-                                      </span>
-                                    ) : (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                                        <PlusCircle className="w-3 h-3" />
-                                        Create Task Proposal
-                                      </span>
-                                    )}
-
-                                    {item.similarityScore !== null && item.similarityScore !== undefined && (
-                                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-muted/60 text-muted-foreground border border-border-subtle">
-                                        {Math.round(item.similarityScore * 100)}% Match
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="font-medium text-foreground leading-snug pt-0.5">
-                                    {item.text}
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/20">
-                                    {Math.round(item.confidence * 100)}% Confidence
-                                  </span>
-                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-zinc-500/10 text-zinc-400 border border-zinc-500/20 uppercase">
-                                    {item.state}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Update Task: Matched Task Details */}
-                              {item.proposalType === 'update_task' && (
-                                <div className="p-2.5 rounded bg-amber-500/5 border border-amber-500/20 space-y-1 text-[11px]">
-                                  <div className="flex items-center justify-between text-amber-300 font-medium">
-                                    <span>
-                                      Target Task: {item.rankedAlternatives?.[0]?.taskKey || item.targetTaskId || 'Matched Task'}
-                                      {item.rankedAlternatives?.[0]?.taskTitle && ` — "${item.rankedAlternatives[0].taskTitle}"`}
-                                    </span>
-                                    <span className="text-[10px] font-mono">
-                                      Similarity: {item.similarityScore ? `${Math.round(item.similarityScore * 100)}%` : '≥85%'}
-                                    </span>
-                                  </div>
-                                  <p className="text-[10px] text-amber-400/80 leading-relaxed">
-                                    Matches existing open task via semantic deduplication (≥0.85 threshold). Proposal will update the existing task description instead of creating a duplicate.
-                                  </p>
-                                  {item.rankedAlternatives && item.rankedAlternatives.length > 1 && (
-                                    <div className="pt-1 text-[10px] text-muted-foreground">
-                                      <span className="font-semibold">Alternative candidates: </span>
-                                      {item.rankedAlternatives.slice(1, 3).map((alt, idx) => (
-                                        <span key={alt.taskId} className="font-mono">
-                                          {idx > 0 && ', '}
-                                          {alt.taskKey} ({Math.round(alt.similarityScore * 100)}%)
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-
-                              {/* Create Task: New Task Note */}
-                              {item.proposalType === 'create_task' && item.dedupStatus === 'no_match' && (
-                                <div className="text-[10px] text-muted-foreground italic">
-                                  No existing open task matched threshold (&lt;0.85 similarity). Staged as a new task proposal.
-                                </div>
-                              )}
-
-                              {/* Resolved Owner & Due Date */}
-                              <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground pt-1 border-t border-border-subtle/40">
-                                {item.suggestedOwnerId ? (
-                                  <span className="flex items-center gap-1.5">
-                                    <User className="w-3 h-3 text-accent" />
-                                    <span>
-                                      Suggested Owner: <strong className="text-foreground">{item.ownerName || item.suggestedOwnerId}</strong>
-                                    </span>
-                                    {item.ownerResolutionMethod && (
-                                      <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-accent/10 text-accent border border-accent/20">
-                                        {item.ownerResolutionMethod === 'speaker_commitment'
-                                          ? 'Speaker Commitment'
-                                          : item.ownerResolutionMethod === 'explicit_name'
-                                          ? 'Project Member Match'
-                                          : item.ownerResolutionMethod === 'fast_llm'
-                                          ? 'LLM Match'
-                                          : item.ownerResolutionMethod}
-                                      </span>
-                                    )}
-                                  </span>
-                                ) : item.ownerName ? (
-                                  <span className="flex items-center gap-1 text-muted-foreground">
-                                    <User className="w-3 h-3 text-zinc-500" />
-                                    <span>
-                                      Owner: <strong className="text-foreground">{item.ownerName}</strong>
-                                      <span className="text-[10px] italic text-zinc-500 ml-1">(Unresolved to Workspace User)</span>
-                                    </span>
-                                  </span>
-                                ) : (
-                                  <span className="italic text-zinc-500 flex items-center gap-1">
-                                    <User className="w-3 h-3" /> Unassigned
-                                  </span>
-                                )}
-
-                                {item.suggestedDue ? (
-                                  <span className="flex items-center gap-1.5">
-                                    <Calendar className="w-3 h-3 text-amber-400" />
-                                    <span>
-                                      Target Due Date: <strong className="text-foreground font-mono">{item.suggestedDue}</strong>
-                                    </span>
-                                    {item.dueResolutionExplanation && (
-                                      <span className="text-[10px] text-muted-foreground italic">
-                                        ({item.dueResolutionExplanation})
-                                      </span>
-                                    )}
-                                  </span>
-                                ) : item.duePhrase ? (
-                                  <span className="flex items-center gap-1 text-muted-foreground">
-                                    <Clock className="w-3 h-3 text-amber-400" />
-                                    <span>
-                                      Due Phrase: &quot;<strong className="text-foreground">{item.duePhrase}</strong>&quot;
-                                      <span className="text-[10px] italic text-zinc-500 ml-1">(Unresolved date)</span>
-                                    </span>
-                                  </span>
-                                ) : (
-                                  <span className="italic text-zinc-500 flex items-center gap-1">
-                                    <Clock className="w-3 h-3" /> No due date
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* Evidence Grounding Badges */}
-                              {item.evidence && item.evidence.length > 0 && (
-                                <div className="pt-1.5 border-t border-border-subtle/50 space-y-1">
-                                  <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center justify-between">
-                                    <span>Evidence Grounding:</span>
-                                    {item.validationStatus === 'valid' && (
-                                      <span className="text-[9px] text-emerald-400 font-mono">
-                                        ✓ Canonical transcript verified
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {item.evidence.map((ev, evIdx) => (
-                                      <button
-                                        key={evIdx}
-                                        type="button"
-                                        onClick={() => jumpToCue(ev.seq)}
-                                        className="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-mono bg-accent/10 hover:bg-accent/20 text-accent border border-accent/20 transition-colors text-left"
-                                        title={`Jump to cue #${ev.seq} in transcript`}
-                                      >
-                                        <ExternalLink className="w-2.5 h-2.5 shrink-0" />
-                                        <span>
-                                          [Cue #{ev.seq}]: &quot;{ev.canonicalExcerpt || ev.quote}&quot;
-                                          {ev.charStart !== undefined && ev.charEnd !== undefined && (
-                                            <span className="text-muted-foreground ml-1">
-                                              ({ev.charStart}-{ev.charEnd})
-                                            </span>
-                                          )}
-                                        </span>
-                                      </button>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Staged State Notice */}
-                              <div className="text-[10px] text-zinc-500 italic pt-0.5">
-                                Staged proposal awaiting human review. No task created or updated in the tasks table.
-                              </div>
-                            </div>
+                              item={item}
+                              orgId={orgId}
+                              onJumpToCue={jumpToCue}
+                              onItemChange={(updated) =>
+                                setActionItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)))
+                              }
+                            />
                           ))}
                         </div>
 

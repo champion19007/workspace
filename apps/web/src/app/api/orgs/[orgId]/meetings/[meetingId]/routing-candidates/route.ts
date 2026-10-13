@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getServerContext } from '@/lib/server-context';
 import { SESSION_COOKIE_NAME, verifyAndRefreshSession } from '@/lib/session';
 import { resolveTenantForUser } from '@/lib/resolve-org';
-import { getMeetingById, getRoutingCandidatesForUser } from '@workspace/db';
+import { authorizeMeetingAccess, getRoutingCandidatesForUser } from '@workspace/db';
 import { DomainError } from '@workspace/core';
 
 export async function GET(
@@ -25,13 +25,18 @@ export async function GET(
   try {
     const tenant = await resolveTenantForUser(db, orgIdentifier, session.userId);
 
-    const currentMeeting = await getMeetingById(sql, tenant.orgId, meetingId);
-    if (!currentMeeting) {
-      return NextResponse.json(
-        { error: 'NOT_FOUND', message: 'Meeting not found' },
-        { status: 404 }
-      );
+    // Project privacy first: hosting does not bypass a private project (inaccessible -> 404).
+    const auth = await authorizeMeetingAccess(sql, {
+      orgId: tenant.orgId,
+      meetingId,
+      userId: session.userId,
+      userRole: tenant.role,
+      action: 'read',
+    });
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.errorCode, message: auth.errorMessage }, { status: auth.httpStatus });
     }
+    const currentMeeting = auth.meeting!;
 
     if (tenant.role === 'viewer') {
       return NextResponse.json(
@@ -42,8 +47,7 @@ export async function GET(
 
     if (tenant.role === 'member') {
       const isHost =
-        currentMeeting.hostId === session.userId ||
-        currentMeeting.zoomHostEmail?.toLowerCase() === session.email.toLowerCase();
+        currentMeeting.hostId === session.userId; // verified binding only; no email fallback
       if (!isHost) {
         return NextResponse.json(
           { error: 'FORBIDDEN', message: 'You can only view routing candidates for meetings you hosted' },

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import crypto from 'crypto';
+import { CalendarDateSchema, TaskPriorityEnum, type TaskDTO } from '../tasks/index.js';
 
 /**
  * Granular Zoom scopes required by the transcript-only product.
@@ -524,6 +525,107 @@ export interface ActionItemDTO {
   extractionRunId?: string | null;
   createdAt: string;
   updatedAt: string;
+  // Stage 17: human decision state (populated by the shared approval read model)
+  version?: number;
+  decisionReason?: ActionItemRejectReason | null;
+  decisionNote?: string | null;
+  /** Task created/updated by the decision; details are null when the caller cannot see that task. */
+  task?: ActionItemTaskSummaryDTO | null;
+  /** Current state of the update_task target (for before -> after previews); null when not visible. */
+  targetTask?: ActionItemTaskSummaryDTO | null;
+  meeting?: { id: string; title: string | null; startedAt: string | null; nodeId: string | null };
+  project?: { id: string; name: string } | null;
+  suggestedOwner?: { id: string; name: string | null; email: string } | null;
+  /** True when the item's extraction run is older than the meeting's processing generation: it can no longer be decided. */
+  superseded?: boolean;
+  /** True when the caller's role may decide and the item is still a valid, current open suggestion. */
+  canDecide?: boolean;
+}
+
+// Stage 17: Human approval of AI suggestions (Requirement N-2)
+export const ACTION_ITEM_REJECT_REASONS = ['wrong', 'duplicate', 'not_a_task', 'other'] as const;
+export type ActionItemRejectReason = (typeof ACTION_ITEM_REJECT_REASONS)[number];
+
+export interface ActionItemTaskSummaryDTO {
+  id: string;
+  key: string;
+  title: string;
+  description: string | null;
+  status: string;
+  projectId: string;
+  assigneeId: string | null;
+  assigneeName: string | null;
+  dueDate: string | null;
+  version: number;
+  archivedAt: string | null;
+}
+
+export const ActionItemDecisionSchema = z.discriminatedUnion('decision', [
+  z
+    .object({
+      decision: z.literal('approve'),
+      acknowledgeIncompleteDedup: z.boolean().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      decision: z.literal('edit'),
+      title: z.string().trim().min(1).max(500).optional(),
+      /** create mode: task description; update mode: note appended to the target task description. */
+      description: z.string().max(50000).nullable().optional(),
+      assigneeId: z.string().uuid().nullable().optional(),
+      dueDate: CalendarDateSchema.optional(),
+      priority: TaskPriorityEnum.optional(),
+      projectId: z.string().uuid().optional(),
+      mode: z.enum(['create', 'update']).optional(),
+      targetTaskId: z.string().uuid().optional(),
+      targetTaskVersion: z.number().int().positive().optional(),
+      acknowledgeIncompleteDedup: z.boolean().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      decision: z.literal('reject'),
+      reason: z.enum(ACTION_ITEM_REJECT_REASONS),
+      note: z.string().trim().max(1000).optional(),
+    })
+    .strict(),
+]);
+export type ActionItemDecisionInput = z.infer<typeof ActionItemDecisionSchema>;
+
+export const ListActionItemsQuerySchema = z.object({
+  state: z.enum(['suggested', 'approved', 'edited', 'rejected']).default('suggested'),
+  validation: z.enum(['valid', 'invalid']).default('valid'),
+  meetingId: z.string().uuid().optional(),
+  assignee: z.union([z.literal('me'), z.string().uuid()]).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: z.string().optional(),
+  updatedSince: z.string().datetime().optional(),
+});
+export type ListActionItemsQuery = z.infer<typeof ListActionItemsQuerySchema>;
+
+export interface ActionItemDecisionResultDTO {
+  actionItem: ActionItemDTO;
+  task: TaskDTO | null;
+  taskOperation: 'created' | 'updated' | null;
+  assignment: { suggestedOwnerId: string | null; appliedAssigneeId: string | null; suggestedOwnerDropped: boolean };
+}
+
+/** Levenshtein distance divided by the longer string length (0 = identical, 1 = completely different). */
+export function normalizedEditDistance(a: string, b: string): number {
+  const s = a.trim();
+  const t = b.trim();
+  const longest = Math.max(s.length, t.length);
+  if (longest === 0) return 0;
+  let prev = Array.from({ length: t.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= s.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= t.length; j++) {
+      cur[j] = Math.min(prev[j]! + 1, cur[j - 1]! + 1, prev[j - 1]! + (s[i - 1] === t[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[t.length]! / longest;
 }
 
 export interface MeetingNotesDTO {

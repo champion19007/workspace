@@ -28,7 +28,13 @@ export function rfc9457ErrorHandler(
   request: FastifyRequest,
   reply: FastifyReply
 ) {
-  request.log.error({ err: error }, 'Request processing error');
+  if (error instanceof DomainError && error.status < 500) {
+    // Client errors: log the stable code only. `details` can carry entity snapshots
+    // (task text, transcript evidence quotes) that must never reach logs.
+    request.log.warn({ code: error.code, status: error.status }, error.message);
+  } else {
+    request.log.error({ err: error }, 'Request processing error');
+  }
 
   reply.header('content-type', 'application/problem+json');
 

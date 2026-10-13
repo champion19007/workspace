@@ -107,13 +107,13 @@ describe('Stage 15: Golden Set Evaluation & N-1 Evidence Gates', () => {
 
   it('evaluates synthetic golden meetings against EVAL_TARGETS rubric', () => {
     let totalTruePositives = 0;
-    let totalFalsePositives = 0;
+    const totalFalsePositives = 0;
     let totalFalseNegatives = 0;
     let totalCorrectOwners = 0;
     let totalOwners = 0;
     let totalValidEvidence = 0;
     let totalEvidence = 0;
-    let totalHallucinatedDates = 0;
+    const totalHallucinatedDates = 0;
 
     for (const mtg of SYNTHETIC_GOLDEN_MEETINGS) {
       const segmentsBySeq = new Map(

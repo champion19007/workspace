@@ -17,3 +17,4 @@ export * from './routing-operations.js';
 export * from './extraction-operations.js';
 export * from './task-embedding-operations.js';
 export * from './resolution-operations.js';
+export * from './approval-operations.js';

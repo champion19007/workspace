@@ -480,7 +480,10 @@ export const meetingRoutes: FastifyPluginAsync<MeetingRouteOptions> = async (app
       }
       const meeting = auth.meeting!;
 
-      const result = await getMeetingNotesAndSuggestions(sql, tenant.orgId, meetingId);
+      const result = await getMeetingNotesAndSuggestions(sql, tenant.orgId, meetingId, {
+        userId: user.id,
+        role: tenant.role,
+      });
       reply.header('ETag', formatETag(meeting.version));
       return reply.status(200).send(result);
     }

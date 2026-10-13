@@ -142,11 +142,12 @@ This document outlines the complete 25-stage engineering implementation roadmap 
 
 ---
 
-### Stage 17: Approvals System
+### Stage 17: Approvals System (Completed)
 - Human-in-the-loop suggestion inbox: approve, edit, or reject action items.
 - Strict write guard: zero tasks written to database without explicit human approval.
 - Conversion of approved action items into tasks inside project tree.
 - Logging approval choices for downstream evaluation dataset curation.
+- Delivered: `decideActionItem` decision API (Fastify + web BFF) with strong `If-Match`, `Idempotency-Key`, row locks and 409 eligibility guards; tasks created/updated only through the shared task-operations path; update proposals refuse changed targets (`TARGET_CHANGED`) instead of overwriting; append-only `action_item_decisions` eval log (migration `0014_stage17_approvals.sql`) with RESTRICTIVE private-project RLS; permission-filtered approval inbox API; real Approvals inbox page and functional drawer controls; email-based meeting access fallback removed. See ADR 17 in `docs/decision-log.md`.
 
 ---
 

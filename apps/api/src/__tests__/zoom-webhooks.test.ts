@@ -11,6 +11,7 @@ import {
   createOrganizationWithOwner,
   connectZoomIntegration,
   updateZoomHostConsent,
+  updateMyHostConsent,
   type DatabaseInstance,
   type Sql,
 } from '@workspace/db';
@@ -541,6 +542,58 @@ describe('Stage 12: Secure Zoom Webhook Intake, Deauthorization, and Meeting Met
       const uuids = rows.map((r) => r.provider_meeting_uuid);
       expect(uuids).toContain(meeting1Uuid);
       expect(uuids).toContain(recurringInstanceUuid);
+    });
+
+    it('binds meetings.host_id only through the verified consent mapping, never by host email', async () => {
+      // Meeting ingested before the member claimed the Zoom identity: same host email, but no binding.
+      const [unbound] = await sql<Array<{ host_id: string | null }>>`
+        SELECT host_id FROM meetings
+        WHERE org_id = ${testOrg.id} AND provider_meeting_uuid = ${meeting1Uuid}
+      `;
+      expect(unbound!.host_id).toBeNull();
+
+      // Member claims the Zoom host identity through authenticated self-service consent.
+      await updateMyHostConsent(sql, {
+        orgId: testOrg.id,
+        userId: memberUser.id,
+        userEmail: memberUser.email,
+        consentStatus: 'opted_in',
+      });
+
+      const boundUuid = 'instance_uuid_bound_789';
+      const rawBody = JSON.stringify({
+        event: 'recording.completed',
+        event_ts: Date.now(),
+        payload: {
+          account_id: ZOOM_ACCOUNT_ID,
+          object: {
+            id: 12312312399,
+            uuid: boundUuid,
+            host_id: OPTED_IN_HOST_ID,
+            host_email: 'renamed-zoom-email@example.com',
+            topic: 'Bound Host Sync',
+            start_time: new Date(Date.now() + 1000).toISOString(),
+          },
+        },
+      });
+      const timestampSec = Math.floor(Date.now() / 1000);
+      const res = await server.app.inject({
+        method: 'POST',
+        url: '/webhooks/zoom',
+        headers: {
+          'x-zm-request-timestamp': String(timestampSec),
+          'x-zm-signature': signZoomWebhook(rawBody, timestampSec),
+          'Content-Type': 'application/json',
+        },
+        payload: rawBody,
+      });
+      expect(res.statusCode).toBe(200);
+
+      const [bound] = await sql<Array<{ host_id: string | null }>>`
+        SELECT host_id FROM meetings
+        WHERE org_id = ${testOrg.id} AND provider_meeting_uuid = ${boundUuid}
+      `;
+      expect(bound!.host_id).toBe(memberUser.id);
     });
 
     it('marks meeting from opted-out host as skipped tombstone and does not emit ready outbox command', async () => {

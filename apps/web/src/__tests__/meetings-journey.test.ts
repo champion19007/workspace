@@ -107,9 +107,9 @@ describe('Web BFF & UI Journey: Zoom Meetings Intake & Lifecycle (Requirement M-
 
     await sql`
       INSERT INTO zoom_host_consents (
-        org_id, integration_id, zoom_user_id, zoom_email, consent_status, admin_disabled
+        org_id, integration_id, zoom_user_id, zoom_email, user_id, consent_status, admin_disabled
       ) VALUES (
-        ${testOrg.id}, ${integrationRow.id}, ${HOST_ZOOM_ID}, ${memberUser.email}, 'opted_in', false
+        ${testOrg.id}, ${integrationRow.id}, ${HOST_ZOOM_ID}, ${memberUser.email}, ${memberUser.id}, 'opted_in', false
       )
     `;
   });
@@ -196,18 +196,25 @@ describe('Web BFF & UI Journey: Zoom Meetings Intake & Lifecycle (Requirement M-
   it('restricts regular Members to view only meetings they hosted', async () => {
     const { sql } = getServerContext();
 
+    // host_id is bound through the verified consent mapping (zoom_host_consents.user_id), never by email.
     await sql`
       INSERT INTO meetings (
         org_id, provider, provider_meeting_uuid, provider_numeric_id, title,
-        zoom_host_id, zoom_host_email, status, has_transcript, has_recording
+        zoom_host_id, zoom_host_email, host_id, status, has_transcript, has_recording
       ) VALUES
       (
         ${testOrg.id}, 'zoom', 'uuid_member_host==', '888888888', 'Member 1on1 Sync',
-        ${HOST_ZOOM_ID}, ${memberUser.email}, 'ready_for_transcript_retrieval', true, true
+        ${HOST_ZOOM_ID}, ${memberUser.email},
+        (SELECT user_id FROM zoom_host_consents WHERE org_id = ${testOrg.id} AND zoom_user_id = ${HOST_ZOOM_ID}),
+        'ready_for_transcript_retrieval', true, true
       ),
       (
         ${testOrg.id}, 'zoom', 'uuid_other_host==', '999999999', 'Other Host Private Sync',
-        'zoom_other_person', 'other@example.com', 'ready_for_transcript_retrieval', true, true
+        'zoom_other_person', 'other@example.com', NULL, 'ready_for_transcript_retrieval', true, true
+      ),
+      (
+        ${testOrg.id}, 'zoom', 'uuid_unbound_email_match==', '999999998', 'Unbound Email-Only Match',
+        'zoom_unbound_host', ${memberUser.email}, NULL, 'ready_for_transcript_retrieval', true, true
       )
     `;
 
@@ -218,7 +225,8 @@ describe('Web BFF & UI Journey: Zoom Meetings Intake & Lifecycle (Requirement M-
     expect(res.status).toBe(200);
     const json = await res.json();
 
-    // Member should only see the meeting they hosted
+    // Member should only see the meeting they hosted through a verified binding; an email-only
+    // match without host_id stays visible to Owners/Admins only.
     expect(json.meetings.length).toBe(1);
     expect(json.meetings[0].title).toBe('Member 1on1 Sync');
   });

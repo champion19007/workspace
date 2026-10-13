@@ -177,7 +177,7 @@ describe('Web BFF Journey: Meeting Notes & Action Suggestions (Requirement N-1)'
     expect(res.status).toBe(401);
   });
 
-  it('rejects viewer role with 403 Forbidden', async () => {
+  it('lets a viewer read notes of an accessible project read-only (canDecide=false)', async () => {
     const req = new NextRequest(
       `http://localhost:3000/api/orgs/${testOrg.id}/meetings/${meetingId}/notes`,
       {
@@ -190,9 +190,10 @@ describe('Web BFF Journey: Meeting Notes & Action Suggestions (Requirement N-1)'
       params: Promise.resolve({ orgId: testOrg.id, meetingId }),
     });
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.error).toBe('FORBIDDEN');
+    expect(body.notes.summaryMd).toContain('Web Notes Summary');
+    expect(body.actionItems[0]).toMatchObject({ state: 'suggested', canDecide: false });
   });
 
   it('allows meeting host to fetch notes, decisions, and action suggestions (200 OK + ETag)', async () => {

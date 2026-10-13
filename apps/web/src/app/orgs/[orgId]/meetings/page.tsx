@@ -66,6 +66,26 @@ export default function MeetingsPage() {
     fetchMeetings();
   }, [fetchMeetings]);
 
+  // Deep link (?meeting=<id>) used by task provenance lines and the approvals inbox.
+  const deepLinkHandled = React.useRef(false);
+  useEffect(() => {
+    if (deepLinkHandled.current || loading) return;
+    const linkedId = new URLSearchParams(window.location.search).get('meeting');
+    if (!linkedId) return;
+    deepLinkHandled.current = true;
+    const open = (meeting: ZoomMeetingDTO) => {
+      setSelectedMeeting(meeting);
+      setIsDrawerOpen(true);
+    };
+    const linked = meetings.find((m) => m.id === linkedId);
+    if (linked) return open(linked);
+    // Not in the loaded page (older than the newest 50, or filtered out): fetch that meeting on its own.
+    fetch(`/api/orgs/${orgId}/meetings/${linkedId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => data?.meeting && open(data.meeting))
+      .catch(() => undefined);
+  }, [meetings, loading, orgId]);
+
   const handleRowClick = (meeting: ZoomMeetingDTO) => {
     setSelectedMeeting(meeting);
     setIsDrawerOpen(true);

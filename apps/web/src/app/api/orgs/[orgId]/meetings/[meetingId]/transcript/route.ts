@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getServerContext } from '@/lib/server-context';
 import { SESSION_COOKIE_NAME, verifyAndRefreshSession } from '@/lib/session';
 import { resolveTenantForUser } from '@/lib/resolve-org';
-import { getMeetingById, getMeetingTranscript } from '@workspace/db';
+import { authorizeMeetingAccess, getMeetingTranscript } from '@workspace/db';
 import {
   DomainError,
   GetTranscriptQuerySchema,
@@ -47,13 +47,18 @@ export async function GET(
       );
     }
 
-    const meeting = await getMeetingById(sql, tenant.orgId, meetingId);
-    if (!meeting) {
-      return NextResponse.json(
-        { error: 'NOT_FOUND', message: 'Meeting not found' },
-        { status: 404 }
-      );
+    // Project privacy first: hosting does not bypass a private project (inaccessible -> 404).
+    const auth = await authorizeMeetingAccess(sql, {
+      orgId: tenant.orgId,
+      meetingId,
+      userId: session.userId,
+      userRole: tenant.role,
+      action: 'read',
+    });
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.errorCode, message: auth.errorMessage }, { status: auth.httpStatus });
     }
+    const meeting = auth.meeting!;
 
     if (tenant.role === 'viewer') {
       return NextResponse.json(
@@ -64,8 +69,7 @@ export async function GET(
 
     if (tenant.role === 'member') {
       const isHost =
-        meeting.hostId === session.userId ||
-        meeting.zoomHostEmail?.toLowerCase() === session.email.toLowerCase();
+        meeting.hostId === session.userId; // verified binding only; no email fallback
       if (!isHost) {
         return NextResponse.json(
           { error: 'FORBIDDEN', message: 'You can only view transcripts for meetings you hosted' },

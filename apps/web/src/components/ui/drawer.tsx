@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
+import { trapTabKey } from './dialog';
 
 interface DrawerProps {
   isOpen: boolean;
@@ -22,6 +23,11 @@ export function Drawer({
 }: DrawerProps) {
   const drawerRef = useRef<HTMLDivElement>(null);
   const previouslyFocusedElement = useRef<HTMLElement | null>(null);
+  // Latest onClose without re-running the open effect (which would steal focus on every parent render).
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
 
   useEffect(() => {
     if (isOpen) {
@@ -34,7 +40,9 @@ export function Drawer({
 
       const handleKeyDown = (e: KeyboardEvent) => {
         if (e.key === 'Escape') {
-          onClose();
+          onCloseRef.current();
+        } else if (e.key === 'Tab') {
+          trapTabKey(e, drawerRef.current);
         }
       };
 
@@ -47,7 +55,7 @@ export function Drawer({
         previouslyFocusedElement.current?.focus();
       };
     }
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

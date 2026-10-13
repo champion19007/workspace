@@ -17,6 +17,7 @@ import {
 } from '@workspace/core';
 import type { DbOrSql } from './node-operations.js';
 import { insertOutboxEvent } from './outbox-operations.js';
+import { listMeetingActionItems, type ActionItemViewer } from './approval-operations.js';
 import {
   maskPiiForEmbedding,
   ensureProjectTaskEmbeddings,
@@ -85,6 +86,21 @@ export function normalizeEvidenceQuote(str: string): string {
     .replace(/['".,!?;:()[\]{}—–\-_/\\<>@#$%^&*`~+=]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+type ActionItemLike = { text: string; evidence: Array<{ seq: number }> };
+
+/** Same commitment: identical normalised text, or a shared evidence cue with >= 50% token overlap. */
+function isSameActionItem(a: ActionItemLike, b: ActionItemLike): boolean {
+  const normA = normalizeEvidenceQuote(a.text);
+  const normB = normalizeEvidenceQuote(b.text);
+  if (normA === normB) return true;
+  const seqsA = new Set(a.evidence.map((e) => e.seq));
+  if (!b.evidence.some((e) => seqsA.has(e.seq))) return false;
+  const wordsA = new Set(normA.split(/\s+/));
+  const wordsB = normB.split(/\s+/);
+  const overlap = wordsB.filter((w) => wordsA.has(w)).length;
+  return overlap / Math.max(wordsA.size, wordsB.length) >= 0.5;
 }
 
 /**
@@ -236,7 +252,7 @@ export function findQuoteSpanInSegment(
 
   // 2. Token-based contiguous subarray match with character span preservation
   // Token pattern preserves words, numbers, currency symbols, and hyphenated/contracted words
-  const tokenRegex = /[A-Za-z0-9$%€£]+(?:['’\-][A-Za-z0-9]+)*/g;
+  const tokenRegex = /[A-Za-z0-9$%€£]+(?:['’-][A-Za-z0-9]+)*/g;
   const segTokens: Array<{ raw: string; normalized: string; start: number; end: number }> = [];
   let m: RegExpExecArray | null;
   while ((m = tokenRegex.exec(segmentText)) !== null) {
@@ -388,27 +404,8 @@ export function mergeWindowOutputs(outputs: ExtractionOutput[]): ExtractionOutpu
 
   for (const out of outputs) {
     for (const item of out.action_items) {
-      const normText = normalizeEvidenceQuote(item.text);
-      const itemSeqs = new Set(item.evidence.map((e) => e.seq));
-
       // Check if existing merged item is a match (high text similarity or shared evidence seq)
-      const existingMatch = mergedActionItems.find((existing) => {
-        const existingNorm = normalizeEvidenceQuote(existing.text);
-        if (existingNorm === normText) return true;
-
-        // Shared evidence seq check
-        const hasSharedSeq = existing.evidence.some((e) => itemSeqs.has(e.seq));
-        if (hasSharedSeq) {
-          // Token overlap check
-          const wordsA = new Set(normText.split(/\s+/));
-          const wordsB = existingNorm.split(/\s+/);
-          const overlap = wordsB.filter((w) => wordsA.has(w)).length;
-          const sim = overlap / Math.max(wordsA.size, wordsB.length);
-          if (sim >= 0.5) return true;
-        }
-
-        return false;
-      });
+      const existingMatch = mergedActionItems.find((existing) => isSameActionItem(item, existing));
 
       if (!existingMatch) {
         mergedActionItems.push({
@@ -840,9 +837,10 @@ export async function persistMeetingNotesAndSuggestions(
       DELETE FROM meeting_notes
       WHERE org_id = ${params.orgId} AND meeting_id = ${params.meetingId}
     `;
+    // Human-decided items (approved/edited/rejected) are durable decision records and are never purged here.
     await txn`
       DELETE FROM action_items
-      WHERE org_id = ${params.orgId} AND meeting_id = ${params.meetingId}
+      WHERE org_id = ${params.orgId} AND meeting_id = ${params.meetingId} AND state = 'suggested'
     `;
 
     // 3. Document synchronization in `docs` table
@@ -958,9 +956,20 @@ export async function persistMeetingNotesAndSuggestions(
     `;
 
     // 5. Insert staged action_items: Strictly Enforce Requirement N-1
-    // Filter out any action item that does not have at least 1 valid evidence segment
+    // Filter out any action item that does not have at least 1 valid evidence segment.
+    // A re-extraction in the same generation must not re-stage a suggestion a human already decided
+    // (same matching rule as the cross-window merge above).
+    const decided: ActionItemLike[] = (
+      await txn`
+        SELECT text, evidence FROM action_items
+        WHERE org_id = ${params.orgId} AND meeting_id = ${params.meetingId} AND state <> 'suggested'
+      `
+    ).map((r: any) => ({ text: r.text, evidence: parseJsonArray<{ seq: number }>(r.evidence) }));
     const validActionItems = params.actionItems.filter(
-      (item) => item.evidence && item.evidence.length >= 1
+      (item) =>
+        item.evidence &&
+        item.evidence.length >= 1 &&
+        !decided.some((d) => isSameActionItem(item, d))
     );
 
     const savedActionItems: ActionItemDTO[] = [];
@@ -1172,8 +1181,9 @@ export async function revalidateMeetingActionItems(
       await sql`
         UPDATE action_items
         SET validation_status = 'invalid_evidence',
+            version = version + 1,
             updated_at = now()
-        WHERE org_id = ${orgId} AND id = ${item.id}
+        WHERE org_id = ${orgId} AND id = ${item.id} AND state = 'suggested'
       `;
     } else {
       validCount++;
@@ -1181,8 +1191,9 @@ export async function revalidateMeetingActionItems(
         UPDATE action_items
         SET validation_status = 'valid',
             evidence = ${JSON.stringify(validEvidence)}::jsonb,
+            version = version + 1,
             updated_at = now()
-        WHERE org_id = ${orgId} AND id = ${item.id}
+        WHERE org_id = ${orgId} AND id = ${item.id} AND state = 'suggested'
       `;
     }
   }
@@ -1191,12 +1202,15 @@ export async function revalidateMeetingActionItems(
 }
 
 /**
- * Retrieves persisted meeting notes and staged action items for a given meeting.
+ * Retrieves persisted meeting notes and action items (with decision state, version, linked task and
+ * update-target preview) for a given meeting. Callers must have authorized meeting access; pass the
+ * viewer so `canDecide` and cross-project task visibility are evaluated for that user.
  */
 export async function getMeetingNotesAndSuggestions(
   db: DbOrSql,
   orgId: string,
-  meetingId: string
+  meetingId: string,
+  viewer?: ActionItemViewer
 ): Promise<{ notes: MeetingNotesDTO | null; actionItems: ActionItemDTO[] }> {
   const sql = getSql(db);
 
@@ -1207,13 +1221,7 @@ export async function getMeetingNotesAndSuggestions(
       AND meeting_id = ${meetingId}
   `;
 
-  const itemRows = await sql<any[]>`
-    SELECT *
-    FROM action_items
-    WHERE org_id = ${orgId}
-      AND meeting_id = ${meetingId}
-    ORDER BY created_at ASC
-  `;
+  const actionItems = await listMeetingActionItems(sql, orgId, meetingId, viewer);
 
   const notes: MeetingNotesDTO | null = notesRow
     ? {
@@ -1233,41 +1241,6 @@ export async function getMeetingNotesAndSuggestions(
         updatedAt: toIso(notesRow.updated_at),
       }
     : null;
-
-  const actionItems: ActionItemDTO[] = itemRows.map((r) => ({
-    id: r.id,
-    orgId: r.org_id,
-    meetingId: r.meeting_id,
-    text: r.text,
-    ownerName: r.owner_name,
-    duePhrase: r.due_phrase,
-    suggestedOwnerId: r.suggested_owner_id,
-    suggestedDue: toIsoOrNull(r.suggested_due),
-    evidence: parseJsonArray<EvidenceSegmentDTO>(r.evidence),
-    confidence: Number(r.confidence),
-    state: r.state,
-    proposalType: r.proposal_type || 'create_task',
-    targetTaskId: r.target_task_id,
-    targetTaskVersion: r.target_task_version != null ? Number(r.target_task_version) : null,
-    targetTaskHash: r.target_task_hash,
-    similarityScore: r.similarity_score != null ? Number(r.similarity_score) : null,
-    rankedAlternatives: parseJsonArray(r.ranked_alternatives),
-    embeddingSpace: r.embedding_space,
-    dedupStatus: r.dedup_status || 'pending',
-    dedupedAt: toIsoOrNull(r.deduped_at),
-    ownerResolutionMethod: r.owner_resolution_method,
-    ownerResolutionConfidence: r.owner_resolution_confidence != null ? Number(r.owner_resolution_confidence) : null,
-    ownerResolutionEvidence: r.owner_resolution_evidence,
-    dueResolutionExplanation: r.due_resolution_explanation,
-    dueResolutionStatus: r.due_resolution_status,
-    validationStatus: r.validation_status || 'valid',
-    taskId: r.task_id,
-    decidedBy: r.decided_by,
-    decidedAt: toIsoOrNull(r.decided_at),
-    extractionRunId: r.extraction_run_id,
-    createdAt: toIso(r.created_at),
-    updatedAt: toIso(r.updated_at),
-  }));
 
   return { notes, actionItems };
 }
@@ -1331,7 +1304,8 @@ export async function enrichMeetingSuggestions(
     };
   }
 
-  const meetingStartIso = (
+  // new Date(): drizzle-wrapped postgres clients (API/worker) return timestamptz as strings.
+  const meetingStartIso = new Date(
     meeting.actual_start_at ||
     meeting.scheduled_start_at ||
     meeting.created_at
@@ -1516,6 +1490,8 @@ export async function enrichMeetingSuggestions(
           suggested_due = ${dueRes.suggestedDue ? sql`${dueRes.suggestedDue}::timestamptz` : null},
           due_resolution_explanation = ${dueRes.explanation},
           due_resolution_status = ${dueRes.status},
+          -- The proposal shown to a human changed: stale If-Match decisions must get 412 (Stage 17).
+          version = version + 1,
           updated_at = now()
         WHERE org_id = ${orgId}
           AND id = ${item.id}

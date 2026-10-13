@@ -359,7 +359,7 @@ export async function connectZoomIntegration(
           updated_at = now()
       `;
     }
-  } catch (_syncErr) {
+  } catch {
     // Non-fatal: host discovery sync can be retried or populated on-demand
   }
 
@@ -403,14 +403,14 @@ export async function disconnectZoomIntegration(
     if (secret?.accessToken) {
       await zoomClient.revokeToken(secret.accessToken);
     }
-  } catch (_revokeErr) {
+  } catch {
     // Revocation best-effort
   }
 
   // 2. Immediately purge credentials from Secret Store
   try {
     await secretStore.deleteSecret(current.secret_arn);
-  } catch (_delErr) {
+  } catch {
     // Best-effort delete
   }
 
@@ -627,63 +627,59 @@ export async function getOrRefreshZoomCredentials(
     const currentRefreshToken = latestSecret?.refreshToken || secret.refreshToken;
     const expectedGeneration = integration.connection_generation;
 
-    try {
-      // Rotate token pair via Zoom client
-      const rotated = await zoomClient.refreshToken(currentRefreshToken);
-      const newExpiresAt = new Date(Date.now() + rotated.expires_in * 1000).toISOString();
-      const newPayload = {
-        accessToken: rotated.access_token,
-        refreshToken: rotated.refresh_token,
-        tokenType: rotated.token_type,
-        expiresAt: newExpiresAt,
-        scope: rotated.scope.split(' '),
-      };
+    // Rotate token pair via Zoom client
+    const rotated = await zoomClient.refreshToken(currentRefreshToken);
+    const newExpiresAt = new Date(Date.now() + rotated.expires_in * 1000).toISOString();
+    const newPayload = {
+      accessToken: rotated.access_token,
+      refreshToken: rotated.refresh_token,
+      tokenType: rotated.token_type,
+      expiresAt: newExpiresAt,
+      scope: rotated.scope.split(' '),
+    };
 
-      const { secretArn: newSecretArn } = await secretStore.storeSecret(`zoom:${orgId}`, newPayload);
+    const { secretArn: newSecretArn } = await secretStore.storeSecret(`zoom:${orgId}`, newPayload);
 
-      // Atomic update with generation fencing check
-      const updateRows = await txn<RawIntegrationRow[]>`
-        UPDATE integrations
-        SET secret_arn = ${newSecretArn},
-            last_refreshed_at = now(),
-            last_error_category = NULL,
-            last_error_message = NULL,
-            updated_at = now()
-        WHERE org_id = ${orgId}
-          AND provider = 'zoom'
-          AND connection_generation = ${expectedGeneration}
-        RETURNING *
-      `;
+    // Atomic update with generation fencing check
+    const updateRows = await txn<RawIntegrationRow[]>`
+      UPDATE integrations
+      SET secret_arn = ${newSecretArn},
+          last_refreshed_at = now(),
+          last_error_category = NULL,
+          last_error_message = NULL,
+          updated_at = now()
+      WHERE org_id = ${orgId}
+        AND provider = 'zoom'
+        AND connection_generation = ${expectedGeneration}
+      RETURNING *
+    `;
 
-      if (updateRows.length === 0) {
-        // Generation was bumped while refresh was in-flight (stale worker)
-        // Discard result safely
-        return {
-          accessToken: rotated.access_token,
-          accountId: integration.account_id,
-        };
-      }
-
-      await txn`
-        INSERT INTO outbox (org_id, topic, payload)
-        VALUES (
-          ${orgId},
-          'integration.zoom.refreshed',
-          ${JSON.stringify({
-            orgId,
-            accountId: integration.account_id,
-            refreshedAt: new Date().toISOString(),
-          })}::jsonb
-        )
-      `;
-
+    if (updateRows.length === 0) {
+      // Generation was bumped while refresh was in-flight (stale worker)
+      // Discard result safely
       return {
         accessToken: rotated.access_token,
         accountId: integration.account_id,
       };
-    } catch (err: unknown) {
-      throw err;
     }
+
+    await txn`
+      INSERT INTO outbox (org_id, topic, payload)
+      VALUES (
+        ${orgId},
+        'integration.zoom.refreshed',
+        ${JSON.stringify({
+          orgId,
+          accountId: integration.account_id,
+          refreshedAt: new Date().toISOString(),
+        })}::jsonb
+      )
+    `;
+
+    return {
+      accessToken: rotated.access_token,
+      accountId: integration.account_id,
+    };
   }).catch(async (err) => {
     const error = err as { code?: string; message?: string };
     if (error.code === 'invalid_grant' || (error.message && error.message.includes('Invalid grant'))) {

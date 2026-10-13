@@ -23,6 +23,7 @@ import { docRoutes } from './routes/docs.js';
 import { zoomRoutes } from './routes/zoom.js';
 import { webhookRoutes } from './routes/webhooks.js';
 import { meetingRoutes } from './routes/meetings.js';
+import { actionItemRoutes } from './routes/action-items.js';
 
 export interface ServerInstance {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -102,6 +103,7 @@ export function buildServer(config: AppConfig): ServerInstance {
   app.register(zoomRoutes, { sql, ports, config });
   app.register(webhookRoutes, { sql, ports, config });
   app.register(meetingRoutes, { sql, ports });
+  app.register(actionItemRoutes, { sql });
 
   // 8. RFC 9457 Problem Details Error Handler
   app.setErrorHandler(rfc9457ErrorHandler);

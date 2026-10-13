@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getServerContext } from '@/lib/server-context';
 import { SESSION_COOKIE_NAME, verifyAndRefreshSession } from '@/lib/session';
 import { resolveTenantForUser } from '@/lib/resolve-org';
-import { getMeetingById, getMeetingSpeakers, updateSpeakerMapping } from '@workspace/db';
+import { authorizeMeetingAccess, getMeetingById, getMeetingSpeakers, updateSpeakerMapping } from '@workspace/db';
 import { DomainError, UpdateSpeakerMappingSchema } from '@workspace/core';
 
 export async function GET(
@@ -25,13 +25,18 @@ export async function GET(
   try {
     const tenant = await resolveTenantForUser(db, orgIdentifier, session.userId);
 
-    const currentMeeting = await getMeetingById(sql, tenant.orgId, meetingId);
-    if (!currentMeeting) {
-      return NextResponse.json(
-        { error: 'NOT_FOUND', message: 'Meeting not found' },
-        { status: 404 }
-      );
+    // Project privacy first: hosting does not bypass a private project (inaccessible -> 404).
+    const auth = await authorizeMeetingAccess(sql, {
+      orgId: tenant.orgId,
+      meetingId,
+      userId: session.userId,
+      userRole: tenant.role,
+      action: 'read',
+    });
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.errorCode, message: auth.errorMessage }, { status: auth.httpStatus });
     }
+    const currentMeeting = auth.meeting!;
 
     if (tenant.role === 'viewer') {
       return NextResponse.json(
@@ -42,8 +47,7 @@ export async function GET(
 
     if (tenant.role === 'member') {
       const isHost =
-        currentMeeting.hostId === session.userId ||
-        currentMeeting.zoomHostEmail?.toLowerCase() === session.email.toLowerCase();
+        currentMeeting.hostId === session.userId; // verified binding only; no email fallback
       if (!isHost) {
         return NextResponse.json(
           { error: 'FORBIDDEN', message: 'You can only view speakers for meetings you hosted' },
@@ -109,13 +113,18 @@ export async function POST(
       );
     }
 
-    const currentMeeting = await getMeetingById(sql, tenant.orgId, meetingId);
-    if (!currentMeeting) {
-      return NextResponse.json(
-        { error: 'NOT_FOUND', message: 'Meeting not found' },
-        { status: 404 }
-      );
+    // Project privacy first: hosting does not bypass a private project (inaccessible -> 404).
+    const auth = await authorizeMeetingAccess(sql, {
+      orgId: tenant.orgId,
+      meetingId,
+      userId: session.userId,
+      userRole: tenant.role,
+      action: 'mutate',
+    });
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.errorCode, message: auth.errorMessage }, { status: auth.httpStatus });
     }
+    const currentMeeting = auth.meeting!;
 
     if (tenant.role === 'viewer') {
       return NextResponse.json(
@@ -126,8 +135,7 @@ export async function POST(
 
     if (tenant.role === 'member') {
       const isHost =
-        currentMeeting.hostId === session.userId ||
-        currentMeeting.zoomHostEmail?.toLowerCase() === session.email.toLowerCase();
+        currentMeeting.hostId === session.userId; // verified binding only; no email fallback
       if (!isHost) {
         return NextResponse.json(
           { error: 'FORBIDDEN', message: 'You can only modify speakers for meetings you hosted' },

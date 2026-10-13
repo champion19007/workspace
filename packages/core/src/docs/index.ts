@@ -15,7 +15,7 @@ export const MAX_RETAINED_VERSIONS = 30;
 const SCRIPT_STYLE_BLOCKS_REGEX = /<\s*(script|style)[\s>][\s\S]*?<\/\s*\1\s*>/gi;
 const DANGEROUS_TAGS_REGEX = /<\s*\/?\s*(script|iframe|object|embed|applet|form|input|button|select|textarea|style|link|meta|base|svg|math)[^>]*>/gi;
 const EVENT_HANDLER_ATTRS_REGEX = /\s+on[a-z]+\s*=\s*(['"][^'"]*['"]|[^\s>]+)/gi;
-const JAVASCRIPT_URL_REGEX = /\[([^\]]*)\]\(\s*(?:javascript|vbscript|data):[^\)]*\)/gi;
+const JAVASCRIPT_URL_REGEX = /\[([^\]]*)\]\(\s*(?:javascript|vbscript|data):[^)]*\)/gi;
 const INLINE_SCRIPT_URI_REGEX = /(href|src)\s*=\s*['"]\s*(?:javascript|vbscript|data):[^'"]*['"]/gi;
 
 /**
@@ -44,7 +44,7 @@ export function extractMarkdownExcerpt(markdown: string, maxLength = 160): strin
     .replace(/```[\s\S]*?```/g, '') // remove code blocks
     .replace(/`([^`]+)`/g, '$1') // inline code
     .replace(/#+\s+/g, '') // headers
-    .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1') // links
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // links
     .replace(/[*_~>]/g, '') // formatting
     .replace(/\s+/g, ' ')
     .trim();

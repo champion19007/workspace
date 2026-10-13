@@ -96,8 +96,7 @@ export async function POST(
 
     if (tenant.role === 'member') {
       const isHost =
-        currentMeeting.hostId === session.userId ||
-        currentMeeting.zoomHostEmail?.toLowerCase() === session.email.toLowerCase();
+        currentMeeting.hostId === session.userId; // verified binding only; no email fallback
       if (!isHost) {
         return NextResponse.json(
           { error: 'FORBIDDEN', message: 'You can only route meetings you hosted' },
