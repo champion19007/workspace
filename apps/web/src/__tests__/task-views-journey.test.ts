@@ -4,6 +4,7 @@ import {
   generateRankBetween,
   compareRanks,
   getKolkataTodayDateString,
+  addCalendarDays,
   type TaskDTO,
   type TaskStatus,
   type MyTasksCountsDTO,
@@ -126,9 +127,13 @@ describe('Web Task Views Journey — Board Moves, Ordering & My Tasks Filtering'
 
   describe('2. My Tasks Category Filtering & Count Logic', () => {
     it('correctly categorizes tasks into pending, overdue, dueToday, and upcoming in Asia/Kolkata timezone', () => {
+      // Due dates relative to today (Asia/Kolkata) so the categories do not drift with the run date.
       const todayKolkata = getKolkataTodayDateString();
+      const task1 = { ...baseTask1, dueDate: addCalendarDays(todayKolkata, -5) };
       const task2 = { ...baseTask2, dueDate: todayKolkata };
-      const allTasks = [baseTask1, task2, baseTask3, baseTask4];
+      const task3 = { ...baseTask3, dueDate: addCalendarDays(todayKolkata, 9) };
+      const task4 = { ...baseTask4, dueDate: addCalendarDays(todayKolkata, -5) };
+      const allTasks = [task1, task2, task3, task4];
 
       // Compute counts matching the server & UI algorithm
       const counts: MyTasksCountsDTO = {
@@ -141,15 +146,15 @@ describe('Web Task Views Journey — Board Moves, Ordering & My Tasks Filtering'
 
       expect(counts.all).toBe(4);
       expect(counts.pending).toBe(3); // baseTask1, task2, baseTask3 (baseTask4 is done)
-      expect(counts.overdue).toBe(1); // baseTask1 is 2026-10-01 (overdue)
+      expect(counts.overdue).toBe(1); // task1 is 5 days past due (overdue)
       expect(counts.dueToday).toBe(1); // task2 is due today in Kolkata
-      expect(counts.upcoming).toBe(1); // baseTask3 is 2026-10-15 (upcoming)
+      expect(counts.upcoming).toBe(1); // task3 is due in 9 days (upcoming)
 
       // Completed tasks must never be counted in overdue even if past due date
-      expect(baseTask4.dueDate! < todayKolkata).toBe(true);
-      expect(baseTask4.status).toBe('done');
+      expect(task4.dueDate < todayKolkata).toBe(true);
+      expect(task4.status).toBe('done');
       const overdueTasks = allTasks.filter((t) => t.status !== 'done' && t.dueDate && t.dueDate < todayKolkata);
-      expect(overdueTasks.some((t) => t.id === baseTask4.id)).toBe(false);
+      expect(overdueTasks.some((t) => t.id === task4.id)).toBe(false);
     });
   });
 });

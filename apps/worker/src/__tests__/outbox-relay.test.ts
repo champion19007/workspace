@@ -273,4 +273,23 @@ describe('Transactional Outbox and Background Worker Infrastructure', () => {
     expect(processedPing).not.toBeNull();
     expect(processedPing!.pingId).toBe(pingId);
   });
+
+  it('OutboxRelay enqueues meeting.suggestions_created so suggestion enrichment runs', async () => {
+    const received: Array<{ meetingId: string }> = [];
+    await worker.ports.queue.subscribe?.('meeting.suggestions_created', async (data) => {
+      received.push(data);
+    });
+    const meetingId = crypto.randomUUID();
+    const eventId = await insertOutboxEvent(worker.db, {
+      orgId: testOrgId,
+      topic: 'meeting.suggestions_created',
+      payload: { orgId: testOrgId, meetingId, actionItemCount: 0, actionItemIds: [], emittedAt: new Date().toISOString() },
+    });
+
+    await worker.relay.relayOnce();
+
+    const [record] = await worker.sql`SELECT sent_at FROM outbox WHERE id = ${eventId}`;
+    expect(record!.sent_at).not.toBeNull();
+    expect(received.map((d) => d.meetingId)).toContain(meetingId);
+  });
 });

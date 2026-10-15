@@ -10,6 +10,7 @@ import {
 import { SESSION_COOKIE_NAME, serializeSession } from '../lib/session';
 import { getServerContext } from '../lib/server-context';
 import { buildEditDecision, editNeedsDedupAck, initialEditForm } from '../lib/action-item-decision';
+import { readDeepLinkId } from '../lib/deep-link';
 import { GET as listBFF } from '../app/api/orgs/[orgId]/action-items/route';
 import { GET as getBFF } from '../app/api/orgs/[orgId]/action-items/[actionItemId]/route';
 import { POST as decideBFF } from '../app/api/orgs/[orgId]/action-items/[actionItemId]/decision/route';
@@ -425,5 +426,21 @@ describe('Web BFF Journey: Approvals inbox and meeting drawer decisions (Require
       decisionNote: 'Just a status update',
       task: null,
     });
+  });
+});
+
+describe('Deep links (?meeting=, ?task=) only accept UUIDs', () => {
+  it('drops an encoded path-traversal value that would retarget the same-origin fetch', () => {
+    const id = generateUuidV7();
+    expect(readDeepLinkId(`?meeting=${id}`, 'meeting')).toBe(id);
+    expect(readDeepLinkId(`?task=${id}&x=1`, 'task')).toBe(id);
+
+    const crafted = '?meeting=..%2F..%2F..%2Fauth%2Fcallback%3Ftoken%3Dattacker%26email%3Da%40evil.test';
+    const raw = new URLSearchParams(crafted).get('meeting')!;
+    // Why it matters: interpolated unencoded, the browser resolves the decoded "../" segments.
+    expect(new URL(`/api/orgs/o/meetings/${raw}`, 'http://app.test').pathname).toBe('/api/auth/callback');
+    expect(readDeepLinkId(crafted, 'meeting')).toBeNull();
+    expect(readDeepLinkId('?task=..%2Fmembers', 'task')).toBeNull();
+    expect(readDeepLinkId('', 'task')).toBeNull();
   });
 });

@@ -235,6 +235,36 @@ describe('Stage 17: Approval API (approve / edit / reject)', () => {
       expect(ok.statusCode).toBe(200);
       expect(await taskCount()).toBe(1);
     });
+
+    it('treats a failed task-embedding backfill as incomplete dedup even when the item embed succeeds', async () => {
+      const unindexed = await createTask(server.db, {
+        orgId: org.id,
+        actorUserId: owner.id,
+        role: 'owner',
+        input: { projectId: privateProjectId, title: 'Unindexed backfill task', status: 'todo', priority: 'medium' },
+      });
+      const { meetingId, itemIds } = await seedMeeting([QUOTE], null);
+      // Provider fails (e.g. 429 after retries) for the task backfill only; the suggestion's own embed succeeds.
+      const partialEmbed: LLMPort = {
+        ...server.ports.llm,
+        embed: async (input) => {
+          if (input.texts.some((t) => t.includes('Unindexed backfill task'))) throw new Error('rate limited');
+          return server.ports.llm.embed(input);
+        },
+      };
+      await enrichMeetingSuggestions(sql, { orgId: org.id, meetingId, llmPort: partialEmbed });
+      try {
+        const item = (await get(member, `/action-items/${itemIds[0]}`)).json();
+        expect(item).toMatchObject({ dedupStatus: 'incomplete', proposalType: 'create_task' });
+        const before = await taskCount();
+        const blocked = await decide(member, itemIds[0]!, { decision: 'approve' }, `"v${item.version}"`);
+        expect(blocked.statusCode).toBe(409);
+        expect(blocked.json().code).toBe('DEDUP_INCOMPLETE');
+        expect(await taskCount()).toBe(before);
+      } finally {
+        await sql`UPDATE tasks SET archived_at = now() WHERE id = ${unindexed.id}`;
+      }
+    });
   });
 
   describe('Approve create_task proposal', () => {
@@ -267,6 +297,7 @@ describe('Stage 17: Approval API (approve / edit / reject)', () => {
       expect(body.task.key).toMatch(/^[A-Z0-9]+-\d+$/);
       expect(JSON.parse(body.task.sourceRef)).toEqual({ meetingId, actionItemId: id, evidenceSeqs: [1] });
       expect(body.task.description).toContain(`/orgs/${org.id}/meetings?meeting=${meetingId}`);
+      expect(body.task.description).toContain('meeting "Approvals Sync" (2026-10-05)'); // same project: named
       expect(body.task.description).not.toContain('by next week'); // no transcript dump
       expect(body.actionItem).toMatchObject({ state: 'approved', version: 2, taskId: body.task.id, decidedBy: member2.id, canDecide: false });
       expect(body.actionItem.task).toMatchObject({ id: body.task.id, key: body.task.key });
@@ -382,6 +413,10 @@ describe('Stage 17: Approval API (approve / edit / reject)', () => {
         source: 'zoom_meeting',
       });
       expect(body.task.description).toContain('Cover decision rights');
+      // Private meeting's title/date never copied into a project with wider visibility; only the opaque link.
+      expect(body.task.description).not.toContain('Approvals Sync');
+      expect(body.task.description).not.toContain('2026-10-05');
+      expect(body.task.description).toContain('Source: approved AI suggestion from a meeting — /orgs/');
       expect(body.actionItem.state).toBe('edited');
 
       const [log] = await sql<any[]>`SELECT * FROM action_item_decisions WHERE action_item_id = ${id}`;
@@ -584,6 +619,26 @@ describe('Stage 17: Approval API (approve / edit / reject)', () => {
       } finally {
         await sql`UPDATE zoom_host_consents SET consent_status = 'opted_in' WHERE org_id = ${org.id}`;
       }
+
+      // Admin override through the real endpoint does not bump the generation: the read model must still
+      // drop the item from the queue and report it undecidable, and re-enabling restores it.
+      const adminToggle = (adminDisabled: boolean) =>
+        server.app.inject({
+          method: 'PATCH',
+          url: `/api/v1/orgs/${org.slug}/integrations/zoom/hosts/${HOST_ZOOM_ID}`,
+          headers: { ...auth(owner), 'content-type': 'application/json' },
+          payload: JSON.stringify({ adminDisabled }),
+        });
+      expect((await adminToggle(true)).statusCode).toBe(200);
+      try {
+        expect((await get(member, `/action-items?meetingId=${consent.meetingId}`)).json().items).toHaveLength(0);
+        const held = (await get(member, `/action-items/${consent.itemIds[0]}`)).json();
+        expect(held).toMatchObject({ state: 'suggested', superseded: false, consentWithdrawn: true, canDecide: false });
+      } finally {
+        expect((await adminToggle(false)).statusCode).toBe(200);
+      }
+      const restored = (await get(member, `/action-items?meetingId=${consent.meetingId}`)).json().items;
+      expect(restored).toMatchObject([{ id: consent.itemIds[0], consentWithdrawn: false, canDecide: true }]);
       for (const r of [r1, r2]) expect(r.statusCode).toBe(409);
       const decided = await sql`
         SELECT 1 FROM action_item_decisions

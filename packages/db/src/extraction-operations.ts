@@ -1313,6 +1313,8 @@ export async function enrichMeetingSuggestions(
 
   // 3. Fetch permitted project members if routed
   let projectMembers: ProjectMemberCandidate[] = [];
+  // A failed backfill leaves some open tasks unsearchable: then "no match" is unproven (ADR 17).
+  let taskIndexComplete = true;
   if (meeting.node_id) {
     try {
       await ensureProjectTaskEmbeddings(sql, llmPort, {
@@ -1321,7 +1323,8 @@ export async function enrichMeetingSuggestions(
         embeddingSpace,
       });
     } catch {
-      // Embedding generation may fail if provider credentials missing, handled gracefully
+      // Embedding provider failure (e.g. missing credentials, rate limit): items without a match become 'incomplete'.
+      taskIndexComplete = false;
     }
 
     const memberRows = await sql<Array<{ user_id: string; name: string; email: string }>>`
@@ -1458,7 +1461,7 @@ export async function enrichMeetingSuggestions(
               targetTaskVersion = null;
               targetTaskHash = null;
               similarityScore = matches[0]?.similarityScore ?? null;
-              dedupStatus = 'no_match';
+              dedupStatus = taskIndexComplete ? 'no_match' : 'incomplete';
             }
           } else {
             dedupStatus = 'incomplete';

@@ -16,6 +16,7 @@ import {
 import { TableShell } from '@/components/ui/table-shell';
 import { MeetingDetailDrawer } from '@/components/meetings/MeetingDetailDrawer';
 import type { ZoomMeetingDTO, ZoomMeetingStatus } from '@workspace/core';
+import { readDeepLinkId } from '@/lib/deep-link';
 
 export default function MeetingsPage() {
   const params = useParams();
@@ -70,7 +71,7 @@ export default function MeetingsPage() {
   const deepLinkHandled = React.useRef(false);
   useEffect(() => {
     if (deepLinkHandled.current || loading) return;
-    const linkedId = new URLSearchParams(window.location.search).get('meeting');
+    const linkedId = readDeepLinkId(window.location.search, 'meeting');
     if (!linkedId) return;
     deepLinkHandled.current = true;
     const open = (meeting: ZoomMeetingDTO) => {

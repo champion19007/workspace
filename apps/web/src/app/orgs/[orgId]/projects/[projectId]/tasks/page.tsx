@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/badge';
 import { CreateTaskDialog } from '@/components/tasks/CreateTaskDialog';
 import { TaskDetailDrawer } from '@/components/tasks/TaskDetailDrawer';
+import { readDeepLinkId } from '@/lib/deep-link';
 import {
   type TaskDTO,
   formatRelativeDueDate,
@@ -104,7 +105,7 @@ export default function ProjectTasksPage() {
 
   // Deep link (?task=<id>) used by approved meeting suggestions.
   useEffect(() => {
-    const linkedTaskId = new URLSearchParams(window.location.search).get('task');
+    const linkedTaskId = readDeepLinkId(window.location.search, 'task');
     if (linkedTaskId) {
       setSelectedTaskId(linkedTaskId);
       setIsDrawerOpen(true);

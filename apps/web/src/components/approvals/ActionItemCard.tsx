@@ -321,6 +321,13 @@ export function ActionItemCard({ item, orgId, onItemChange, onJumpToCue, showMee
         </p>
       )}
 
+      {item.state === 'suggested' && !item.superseded && item.consentWithdrawn && (
+        <p className="text-[11px] text-muted-foreground">
+          On hold: meeting processing consent is no longer in effect (the host opted out or was disabled by an admin), so
+          this suggestion cannot be decided.
+        </p>
+      )}
+
       {canDecide && needsAck && (
         <label className="flex items-start gap-2 p-2 rounded bg-amber-500/10 border border-amber-500/20 text-amber-200">
           <input type="checkbox" checked={ackDedup} onChange={(e) => setAckDedup(e.target.checked)} className="mt-0.5" />

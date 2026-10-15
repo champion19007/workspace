@@ -49,6 +49,14 @@ function conflict(code: string, message: string, details?: unknown): DomainError
 }
 
 /**
+ * Read-model mirror of the CONSENT_WITHDRAWN decision guard (host consent opted in, not admin-disabled,
+ * guest consent when guests were present). Expects `m` (meetings) and `hc` (zoom_host_consents) in scope.
+ */
+const consentWithdrawnSql = (sql: any) => sql`NOT COALESCE(
+  hc.consent_status = 'opted_in' AND NOT hc.admin_disabled
+    AND NOT (m.guests_present AND m.guest_consent_status <> 'consented'), false)`;
+
+/**
  * Shared read model for action items (approval inbox, single item, meeting notes drawer).
  * Linked/target task details are only included when the caller can see that task's project,
  * checked on its own (never inferred from the caller's access to the meeting).
@@ -78,6 +86,7 @@ function selectActionItems(sql: any, viewer: ActionItemViewer, where: unknown) {
       so.name AS suggested_owner_name,
       so.email AS suggested_owner_email,
       (er.processing_generation IS DISTINCT FROM m.processing_generation) AS superseded,
+      ${consentWithdrawnSql(sql)} AS consent_withdrawn,
       CASE WHEN lt.id IS NOT NULL AND ${linkedVisible} THEN json_build_object(
         'id', lt.id, 'key', lt.key, 'title', lt.title, 'description', lt.description, 'status', lt.status,
         'projectId', lt.project_id, 'assigneeId', lt.assignee_id, 'assigneeName', lu.name,
@@ -93,6 +102,7 @@ function selectActionItems(sql: any, viewer: ActionItemViewer, where: unknown) {
     LEFT JOIN nodes n ON n.org_id = m.org_id AND n.id = m.node_id
     LEFT JOIN users so ON so.id = ai.suggested_owner_id
     LEFT JOIN extraction_runs er ON er.org_id = ai.org_id AND er.id = ai.extraction_run_id
+    LEFT JOIN zoom_host_consents hc ON hc.org_id = m.org_id AND hc.zoom_user_id = m.zoom_host_id
     LEFT JOIN tasks lt ON lt.org_id = ai.org_id AND lt.id = ai.task_id
     LEFT JOIN nodes ln ON ln.org_id = lt.org_id AND ln.id = lt.project_id
     LEFT JOIN users lu ON lu.id = lt.assignee_id
@@ -154,12 +164,14 @@ function mapActionItemRow(r: any, viewer: ActionItemViewer): ActionItemDTO {
       ? { id: r.suggested_owner_id, name: r.suggested_owner_name, email: r.suggested_owner_email }
       : null,
     superseded: !!r.superseded,
+    consentWithdrawn: !!r.consent_withdrawn,
     canDecide:
       viewer.role !== null &&
       viewer.role !== 'viewer' &&
       r.state === 'suggested' &&
       validationStatus === 'valid' &&
-      !r.superseded,
+      !r.superseded &&
+      !r.consent_withdrawn,
   };
 }
 
@@ -248,9 +260,12 @@ export async function listActionItemsForReview(
     AND ai.state = ${query.state}
     AND ai.validation_status = ${query.validation === 'invalid' ? 'invalid_evidence' : 'valid'}
     ${
-      // Open suggestions from a superseded processing generation can never be decided (STALE_GENERATION),
-      // e.g. after a host opt-out fenced the meeting: keep them out of the review queue.
-      query.state === 'suggested' ? s`AND er.processing_generation = m.processing_generation` : s``
+      // Open suggestions that cannot be decided right now stay out of the review queue: superseded generation
+      // (STALE_GENERATION, e.g. self-service opt-out fenced the meeting) or consent no longer in effect
+      // (CONSENT_WITHDRAWN, e.g. an admin disabled the host). The decision guards stay authoritative.
+      query.state === 'suggested'
+        ? s`AND er.processing_generation = m.processing_generation AND NOT ${consentWithdrawnSql(s)}`
+        : s``
     }
     ${query.meetingId ? s`AND ai.meeting_id = ${query.meetingId}` : s``}
     ${assigneeId ? s`AND ai.suggested_owner_id = ${assigneeId}` : s``}
@@ -439,7 +454,9 @@ export async function decideActionItem(sql: Sql, params: DecideActionItemParams)
         const title = edit?.title ?? item.text;
         if (edit?.title !== undefined && edit.title.trim() !== String(item.text).trim()) changedFields.push('title');
         titleEditDistance = normalizedEditDistance(item.text, title);
-        const provenance = `Source: approved AI suggestion from ${meetingLabel} — ${meetingLink}`;
+        // The meeting's title/date are meeting content: only name them in its own project. Elsewhere readers
+        // may lack access to the (possibly private) meeting, so keep just the opaque link.
+        const provenance = `Source: approved AI suggestion from ${projectId === meeting.node_id ? meetingLabel : 'a meeting'} — ${meetingLink}`;
         const description = [edit?.description?.trim(), provenance].filter(Boolean).join('\n\n');
         const dueDate = edit?.dueDate !== undefined ? edit.dueDate : item.suggested_due_date;
         if (dueDate !== item.suggested_due_date) changedFields.push('dueDate');

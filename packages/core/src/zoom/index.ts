@@ -538,6 +538,8 @@ export interface ActionItemDTO {
   suggestedOwner?: { id: string; name: string | null; email: string } | null;
   /** True when the item's extraction run is older than the meeting's processing generation: it can no longer be decided. */
   superseded?: boolean;
+  /** True when host/guest processing consent is no longer in effect (e.g. an admin disabled the host): not decidable. */
+  consentWithdrawn?: boolean;
   /** True when the caller's role may decide and the item is still a valid, current open suggestion. */
   canDecide?: boolean;
 }

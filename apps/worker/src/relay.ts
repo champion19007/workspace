@@ -140,6 +140,7 @@ export class OutboxRelay {
       'meeting.transcript_ready',
       'meeting.transcript_ingested',
       'meeting.routed',
+      'meeting.suggestions_created',
       'notify',
       'index',
       'rollup',
