@@ -9,11 +9,7 @@ import {
   NotFoundError,
   verifyInternalApiRequest,
 } from '@workspace/core';
-import {
-  type DatabaseInstance,
-  getOrganizationByIdOrSlug,
-  getMembershipContext,
-} from '@workspace/db';
+import { type DatabaseInstance, resolveOrgMembership } from '@workspace/db';
 
 export interface AuthenticatedUser {
   id: string;
@@ -117,16 +113,15 @@ const authPluginInner: FastifyPluginAsync<AuthPluginOptions> = async (app, optio
       throw new NotFoundError('Missing organization identifier in path');
     }
 
-    // Resolve org by UUID or slug
-    const org = await getOrganizationByIdOrSlug(db, orgIdentifier);
+    // Resolve org by UUID or slug together with the caller's membership (request bootstrap entry point)
+    const org = await resolveOrgMembership(db, orgIdentifier, request.user.id);
     if (!org) {
       throw new NotFoundError(`Organization "${orgIdentifier}" was not found`);
     }
 
-    // Query user membership
-    const membership = await getMembershipContext(db, org.id, request.user.id);
+    const membership = org.membership;
     if (!membership) {
-      throw new ForbiddenError(`You do not have access to organization "${org.slug}"`);
+      throw new ForbiddenError(`You do not have access to organization "${org.orgSlug}"`);
     }
 
     // Check session_epoch revocation if provided in header
@@ -139,9 +134,9 @@ const authPluginInner: FastifyPluginAsync<AuthPluginOptions> = async (app, optio
     }
 
     request.tenant = {
-      orgId: org.id,
-      orgSlug: org.slug,
-      role: membership.role as OrgRole,
+      orgId: org.orgId,
+      orgSlug: org.orgSlug,
+      role: membership.role,
       sessionEpoch: membership.sessionEpoch,
     };
   });

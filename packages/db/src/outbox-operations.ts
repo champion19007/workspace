@@ -1,5 +1,5 @@
 import postgres from 'postgres';
-import { type DatabaseInstance, type TenantTransaction } from './client.js';
+import { loginSql, tenantSql, withTenantContext, type DatabaseInstance, type TenantTransaction } from './client.js';
 import { outbox } from './schema/index.js';
 
 export interface OutboxRecord {
@@ -26,7 +26,7 @@ export async function insertOutboxEvent(
   params: InsertOutboxEventParams
 ): Promise<string> {
   if (typeof db === 'function') {
-    const sql = db as postgres.Sql;
+    const sql = tenantSql(db as postgres.Sql, { orgId: params.orgId });
     const [record] = await sql`
       INSERT INTO outbox (id, org_id, topic, payload)
       VALUES (uuid_generate_v7(), ${params.orgId}, ${params.topic}, ${JSON.stringify(params.payload)}::jsonb)
@@ -38,14 +38,16 @@ export async function insertOutboxEvent(
     return record.id;
   }
 
-  const [record] = await db
-    .insert(outbox)
-    .values({
-      orgId: params.orgId,
-      topic: params.topic,
-      payload: params.payload,
-    })
-    .returning({ id: outbox.id });
+  const [record] = await withTenantContext(db as DatabaseInstance, { orgId: params.orgId }, (tx) =>
+    tx
+      .insert(outbox)
+      .values({
+        orgId: params.orgId,
+        topic: params.topic,
+        payload: params.payload,
+      })
+      .returning({ id: outbox.id })
+  );
 
   if (!record) {
     throw new Error('Failed to insert outbox event');
@@ -53,6 +55,8 @@ export async function insertOutboxEvent(
 
   return record.id;
 }
+
+// The relay works across organizations through the narrowly privileged entry points of migration 0015.
 
 export async function claimOutboxBatch(
   sql: postgres.Sql,
@@ -64,39 +68,21 @@ export async function claimOutboxBatch(
 ): Promise<OutboxRecord[]> {
   const { workerId, batchSize = 50, leaseSeconds = 60 } = params;
 
-  // Use raw sql transaction to perform atomic SELECT ... FOR UPDATE SKIP LOCKED and update
-  return sql.begin(async (txn) => {
-    const rows = await txn<OutboxRecord[]>`
-      WITH claimable AS (
-        SELECT id
-        FROM outbox
-        WHERE sent_at IS NULL
-          AND (locked_at IS NULL OR locked_at < NOW() - (${leaseSeconds} || ' seconds')::interval)
-        ORDER BY created_at ASC
-        LIMIT ${batchSize}
-        FOR UPDATE SKIP LOCKED
-      )
-      UPDATE outbox
-      SET locked_at = NOW(),
-          locked_by = ${workerId},
-          delivery_attempts = delivery_attempts + 1
-      FROM claimable
-      WHERE outbox.id = claimable.id
-      RETURNING 
-        outbox.id,
-        outbox.org_id as "orgId",
-        outbox.topic,
-        outbox.payload,
-        outbox.delivery_attempts as "deliveryAttempts",
-        outbox.locked_at as "lockedAt",
-        outbox.locked_by as "lockedBy",
-        outbox.last_error as "lastError",
-        outbox.sent_at as "sentAt",
-        outbox.created_at as "createdAt"
-    `;
-
-    return rows;
-  });
+  // Atomic SELECT ... FOR UPDATE SKIP LOCKED + lease update inside sys_outbox_claim
+  return loginSql(sql)<OutboxRecord[]>`
+    SELECT
+      id,
+      org_id as "orgId",
+      topic,
+      payload,
+      delivery_attempts as "deliveryAttempts",
+      locked_at as "lockedAt",
+      locked_by as "lockedBy",
+      last_error as "lastError",
+      sent_at as "sentAt",
+      created_at as "createdAt"
+    FROM sys_outbox_claim(${workerId}, ${batchSize}, ${leaseSeconds})
+  `;
 }
 
 export async function markOutboxDelivered(
@@ -106,16 +92,10 @@ export async function markOutboxDelivered(
     workerId: string;
   }
 ): Promise<boolean> {
-  const result = await sql`
-    UPDATE outbox
-    SET sent_at = NOW(),
-        locked_at = NULL,
-        locked_by = NULL,
-        last_error = NULL
-    WHERE id = ${params.id}
-      AND locked_by = ${params.workerId}
+  const [row] = await loginSql(sql)<Array<{ ok: boolean }>>`
+    SELECT sys_outbox_mark_delivered(${params.id}, ${params.workerId}) AS ok
   `;
-  return result.count > 0;
+  return row!.ok;
 }
 
 export async function recordOutboxFailure(
@@ -126,15 +106,10 @@ export async function recordOutboxFailure(
     error: string;
   }
 ): Promise<boolean> {
-  const result = await sql`
-    UPDATE outbox
-    SET locked_at = NULL,
-        locked_by = NULL,
-        last_error = ${params.error}
-    WHERE id = ${params.id}
-      AND locked_by = ${params.workerId}
+  const [row] = await loginSql(sql)<Array<{ ok: boolean }>>`
+    SELECT sys_outbox_record_failure(${params.id}, ${params.workerId}, ${params.error}) AS ok
   `;
-  return result.count > 0;
+  return row!.ok;
 }
 
 export async function purgeDeliveredOutboxRecords(
@@ -144,10 +119,8 @@ export async function purgeDeliveredOutboxRecords(
   } = {}
 ): Promise<number> {
   const { retentionDays = 7 } = params;
-  const result = await sql`
-    DELETE FROM outbox
-    WHERE sent_at IS NOT NULL
-      AND sent_at < NOW() - (${retentionDays} || ' days')::interval
+  const [row] = await loginSql(sql)<Array<{ purged: number }>>`
+    SELECT sys_outbox_purge(${retentionDays}) AS purged
   `;
-  return result.count;
+  return row!.purged;
 }

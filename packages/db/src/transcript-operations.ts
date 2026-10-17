@@ -13,6 +13,7 @@ import {
   PreconditionFailedError,
   canTransitionMeetingStatus,
 } from '@workspace/core';
+import { loginSql, tenantSql } from './client.js';
 
 interface RawMeetingRow {
   id: string;
@@ -150,7 +151,7 @@ export interface IngestMeetingTranscriptParams {
  * Fenced by processing generation and meeting state.
  */
 export async function ingestMeetingTranscript(
-  sql: Sql,
+  db: Sql,
   params: IngestMeetingTranscriptParams
 ): Promise<{ meeting: MeetingDTO; segmentsCount: number }> {
   const {
@@ -164,6 +165,7 @@ export async function ingestMeetingTranscript(
     segments,
   } = params;
 
+  const sql = tenantSql(db, { orgId: params.orgId, system: true });
   return await sql.begin(async (txn) => {
     // 1. Lock meeting row for update
     const [meetingRow] = await txn<RawMeetingRow[]>`
@@ -276,6 +278,9 @@ export async function ingestMeetingTranscript(
 export interface SkipMeetingAndCleanupParams {
   orgId: string;
   meetingId: string;
+  /** The acting user (already authorized to mutate the meeting): its notes and suggestions are purged under their visibility. */
+  actorUserId?: string;
+  role?: string;
   ifMatchVersion?: number;
   reason?: string;
   blobStore?: BlobStorePort;
@@ -286,10 +291,11 @@ export interface SkipMeetingAndCleanupParams {
  * purges database segments and AI notes, and deletes raw transcript from blob store.
  */
 export async function skipMeetingAndCleanup(
-  sql: Sql,
+  db: Sql,
   params: SkipMeetingAndCleanupParams
 ): Promise<MeetingDTO> {
   const { orgId, meetingId, ifMatchVersion, reason, blobStore } = params;
+  const sql = tenantSql(db, { orgId, userId: params.actorUserId, role: params.role });
 
   let rawKeyToDelete: string | null = null;
 
@@ -420,10 +426,11 @@ export interface GetMeetingTranscriptResult {
  * Retrieves normalized evidence segments for a meeting with pagination and search.
  */
 export async function getMeetingTranscript(
-  sql: Sql,
+  db: Sql,
   params: GetMeetingTranscriptParams
 ): Promise<GetMeetingTranscriptResult> {
   const { orgId, meetingId, limit = 100, offset = 0, search } = params;
+  const sql = tenantSql(db, { orgId });
 
   // 1. Verify meeting exists
   const [meetingRow] = await sql<RawMeetingRow[]>`
@@ -495,11 +502,11 @@ export async function getMeetingTranscript(
  * Retrieves single meeting by ID.
  */
 export async function getMeetingById(
-  sql: Sql,
+  db: Sql,
   orgId: string,
   meetingId: string
 ): Promise<MeetingDTO | null> {
-  const [row] = await sql<RawMeetingRow[]>`
+  const [row] = await tenantSql(db, { orgId })<RawMeetingRow[]>`
     SELECT * FROM meetings
     WHERE org_id = ${orgId} AND id = ${meetingId}
     LIMIT 1
@@ -508,21 +515,25 @@ export async function getMeetingById(
   return row ? mapMeeting(row) : null;
 }
 
+export interface PendingReadyMeeting {
+  id: string;
+  orgId: string;
+  providerMeetingUuid: string;
+  connectionGeneration: number;
+  processingGeneration: number;
+}
+
 /**
- * Discovers meetings that are currently ready_for_transcript_retrieval and not skipped.
- * Used for worker startup recovery.
+ * Discovers meetings that are currently ready_for_transcript_retrieval and not skipped, across organizations
+ * (identifiers only, via the sys_meetings_pending_ready entry point). Used for worker startup recovery.
  */
 export async function listPendingReadyMeetings(
   sql: Sql,
   limit: number = 50
-): Promise<MeetingDTO[]> {
-  const rows = await sql<RawMeetingRow[]>`
-    SELECT * FROM meetings
-    WHERE status = 'ready_for_transcript_retrieval'
-      AND skipped = false
-    ORDER BY created_at ASC
-    LIMIT ${limit}
+): Promise<PendingReadyMeeting[]> {
+  return loginSql(sql)<PendingReadyMeeting[]>`
+    SELECT id, org_id AS "orgId", provider_meeting_uuid AS "providerMeetingUuid",
+           connection_generation AS "connectionGeneration", processing_generation AS "processingGeneration"
+    FROM sys_meetings_pending_ready(${limit})
   `;
-
-  return rows.map(mapMeeting);
 }

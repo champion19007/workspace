@@ -198,6 +198,8 @@ export const meetingRoutes: FastifyPluginAsync<MeetingRouteOptions> = async (app
       const updatedMeeting = await skipMeetingAndCleanup(sql, {
         orgId: tenant.orgId,
         meetingId,
+        actorUserId: user.id,
+        role: tenant.role,
         ifMatchVersion,
         reason: parsed.data.reason,
         blobStore: ports.blobStore,
@@ -277,6 +279,7 @@ export const meetingRoutes: FastifyPluginAsync<MeetingRouteOptions> = async (app
       const speakers = await getMeetingSpeakers(sql, {
         orgId: tenant.orgId,
         meetingId,
+        actorUserId: user.id,
       });
 
       return reply.status(200).send({

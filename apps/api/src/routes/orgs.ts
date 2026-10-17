@@ -123,7 +123,7 @@ export const orgRoutes: FastifyPluginAsync<{ db: DatabaseInstance; ports?: AppPo
       }
 
       const { limit, cursor, updatedSince } = queryParsed.data;
-      let allMembers = await getOrganizationMembers(db, request.tenant!.orgId);
+      let allMembers = await getOrganizationMembers(db, request.tenant!.orgId, request.user!.id);
 
       // Apply updatedSince filter if provided
       if (updatedSince) {

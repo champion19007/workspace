@@ -28,7 +28,7 @@ export async function GET(
 
   try {
     const tenant = await resolveTenantForUser(db, orgIdentifier, session.userId);
-    const integration = await getZoomIntegration(sql, tenant.orgId);
+    const integration = await getZoomIntegration(sql, tenant.orgId, session.userId);
     return NextResponse.json({ integration });
   } catch (err) {
     if (err instanceof DomainError) {

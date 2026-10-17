@@ -150,6 +150,7 @@ describe('Stage 12: Secure Zoom Webhook Intake, Deauthorization, and Meeting Met
       consentStatus: 'opted_in',
       adminDisabled: false,
       role: 'owner',
+      userId: ownerUser.id,
     });
 
     await updateZoomHostConsent(sql, {
@@ -158,6 +159,7 @@ describe('Stage 12: Secure Zoom Webhook Intake, Deauthorization, and Meeting Met
       consentStatus: 'opted_out',
       adminDisabled: false,
       role: 'owner',
+      userId: ownerUser.id,
     });
 
     // 5. Secondary organization

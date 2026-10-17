@@ -56,12 +56,21 @@ cp .env.example .env
 ```bash
 docker compose up -d
 ```
-This provisions PostgreSQL 16 with required extensions: `ltree`, `citext`, `uuid-ossp`, `pgcrypto`, and `pgvector`.
+This provisions PostgreSQL 16 with required extensions: `ltree`, `citext`, `uuid-ossp`, `pgcrypto`, and `pgvector`, plus the local runtime login roles `workspace_api` and `workspace_worker` (dev passwords only). For a volume created before Stage 17b, add those roles by re-running the init script:
+```bash
+docker exec -i workspace-v1-postgres psql -U workspace_user -d workspace_dev -f /docker-entrypoint-initdb.d/01-init.sql
+```
 
-### Step 3: Install Dependencies
+### Step 3: Install Dependencies & Apply Migrations
 ```bash
 pnpm install
+pnpm --filter @workspace/db build
 ```
+Migrations run as the database owner. Set `DATABASE_MIGRATION_URL` from `.env`, then:
+```bash
+pnpm --filter @workspace/db migrate
+```
+The API/BFF and worker never connect as the owner: they use `workspace_api` (`DATABASE_URL`) and `workspace_worker` (`DATABASE_DIRECT_URL`), which are not superusers and cannot bypass row-level security (see ADR 17b in `docs/decision-log.md`).
 
 ### Step 4: Run Health, Lint & Tests
 ```bash
@@ -103,3 +112,4 @@ pnpm dev:web     # Next.js web application on http://localhost:3000
 1. **Zero Mocked Data in UI**: No fake analytics, meetings, or synthetic task numbers.
 2. **Explicit Human Decisions**: AI extracts suggestions, but tasks are never auto-created without human approval.
 3. **Isolation of Domain Core**: `packages/core` strictly enforces zero dependencies on cloud SDKs, apps, or adapters via automated ESLint rules and Vitest AST scanning.
+4. **Row-Level Security at Runtime**: every tenant query runs inside a transaction that assumes `workspace_app` (acting user) or `workspace_system` (worker, one org) with `SET LOCAL`; database operations bind this through `tenantSql` / `withTenantContext`. Cross-organization work goes only through the `sys_*` SECURITY DEFINER functions of migration 0015.

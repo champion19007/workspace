@@ -1,4 +1,4 @@
-import { type DatabaseInstance, getOrganizationByIdOrSlug, getMembershipContext } from '@workspace/db';
+import { type DatabaseInstance, resolveOrgMembership } from '@workspace/db';
 import { NotFoundError, ForbiddenError, type OrgRole } from '@workspace/core';
 
 export interface ResolvedTenant {
@@ -14,21 +14,21 @@ export async function resolveTenantForUser(
   orgIdentifier: string,
   userId: string
 ): Promise<ResolvedTenant> {
-  const org = await getOrganizationByIdOrSlug(db, orgIdentifier);
+  const org = await resolveOrgMembership(db, orgIdentifier, userId);
   if (!org) {
     throw new NotFoundError(`Organization "${orgIdentifier}" was not found`);
   }
 
-  const membership = await getMembershipContext(db, org.id, userId);
+  const membership = org.membership;
   if (!membership) {
-    throw new ForbiddenError(`You do not have access to organization "${org.slug}"`);
+    throw new ForbiddenError(`You do not have access to organization "${org.orgSlug}"`);
   }
 
   return {
-    orgId: org.id,
-    orgSlug: org.slug,
-    orgName: org.name,
-    role: membership.role as OrgRole,
+    orgId: org.orgId,
+    orgSlug: org.orgSlug,
+    orgName: membership.orgName,
+    role: membership.role,
     sessionEpoch: membership.sessionEpoch,
   };
 }

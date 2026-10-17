@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getServerContext } from '@/lib/server-context';
 import { SESSION_COOKIE_NAME, verifyAndRefreshSession } from '@/lib/session';
 import { resolveTenantForUser } from '@/lib/resolve-org';
-import { getMeetingById, resolveGuestConsent } from '@workspace/db';
+import { authorizeMeetingAccess, resolveGuestConsent } from '@workspace/db';
 import { DomainError, ResolveGuestConsentSchema, formatETag } from '@workspace/core';
 
 export async function POST(
@@ -25,6 +25,27 @@ export async function POST(
   try {
     const tenant = await resolveTenantForUser(db, orgIdentifier, session.userId);
 
+    // Centralised meeting authorization first: 404 for inaccessible private meetings, 403 for Viewers
+    const auth = await authorizeMeetingAccess(sql, {
+      orgId: tenant.orgId,
+      meetingId,
+      userId: session.userId,
+      userRole: tenant.role,
+      action: 'mutate',
+    });
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.errorCode, message: auth.errorMessage }, { status: auth.httpStatus });
+    }
+    const currentMeeting = auth.meeting!;
+
+    // Stricter rule for this route: Members may only resolve guest consent for meetings they hosted (verified binding only)
+    if (tenant.role === 'member' && currentMeeting.hostId !== session.userId) {
+      return NextResponse.json(
+        { error: 'FORBIDDEN', message: 'You can only resolve guest consent for meetings you hosted' },
+        { status: 403 }
+      );
+    }
+
     const parsed = ResolveGuestConsentSchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) {
       return NextResponse.json(
@@ -35,32 +56,6 @@ export async function POST(
         },
         { status: 422 }
       );
-    }
-
-    const currentMeeting = await getMeetingById(sql, tenant.orgId, meetingId);
-    if (!currentMeeting) {
-      return NextResponse.json(
-        { error: 'NOT_FOUND', message: 'Meeting not found' },
-        { status: 404 }
-      );
-    }
-
-    if (tenant.role === 'viewer') {
-      return NextResponse.json(
-        { error: 'FORBIDDEN', message: 'Viewers cannot resolve guest consent' },
-        { status: 403 }
-      );
-    }
-
-    if (tenant.role === 'member') {
-      const isHost =
-        currentMeeting.hostId === session.userId; // verified binding only; no email fallback
-      if (!isHost) {
-        return NextResponse.json(
-          { error: 'FORBIDDEN', message: 'You can only resolve guest consent for meetings you hosted' },
-          { status: 403 }
-        );
-      }
     }
 
     const updated = await resolveGuestConsent(sql, {

@@ -1,4 +1,3 @@
-import type postgres from 'postgres';
 import {
   ValidationError,
   NotFoundError,
@@ -6,14 +5,7 @@ import {
   SpeakerResolutionResultSchema,
   type ZoomMeetingParticipant,
 } from '@workspace/core';
-import type { DbOrSql } from './node-operations.js';
-
-function getSql(target: DbOrSql): postgres.Sql {
-  if (target && typeof target === 'object' && '$client' in target) {
-    return (target as any).$client as postgres.Sql;
-  }
-  return target as postgres.Sql;
-}
+import { tenantSql, type DbOrSql } from './client.js';
 
 export interface SpeakerResolutionInfo {
   userId: string | null;
@@ -50,7 +42,7 @@ export async function resolveMeetingSpeakers(
     llmAdapter?: LLMPort;
   }
 ): Promise<ResolveMeetingSpeakersResult> {
-  const sql = getSql(target);
+  const sql = tenantSql(target, { orgId: params.orgId, system: true });
   const { orgId, meetingId, participants, llmAdapter } = params;
 
   // 1. Fetch distinct speaker labels from transcript_segments
@@ -262,7 +254,7 @@ export async function updateSpeakerMapping(
     actorId?: string;
   }
 ): Promise<void> {
-  const sql = getSql(target);
+  const sql = tenantSql(target, { orgId: params.orgId, userId: params.actorId });
   const { orgId, meetingId, speakerLabel, userId, actorId } = params;
 
   if (userId) {
@@ -347,7 +339,8 @@ export async function updateSpeakerMapping(
  */
 export async function getMeetingSpeakers(
   target: DbOrSql,
-  params: { orgId: string; meetingId: string }
+  /** actorUserId: the viewer, so mapped members' names resolve under RLS. */
+  params: { orgId: string; meetingId: string; actorUserId?: string }
 ): Promise<
   Array<{
     speakerLabel: string;
@@ -359,7 +352,7 @@ export async function getMeetingSpeakers(
     segmentCount: number;
   }>
 > {
-  const sql = getSql(target);
+  const sql = tenantSql(target, { orgId: params.orgId, userId: params.actorUserId });
   const { orgId, meetingId } = params;
 
   const rows = await sql<

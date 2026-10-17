@@ -128,6 +128,7 @@ describe('Stage 12: Zoom Recording Fallback Poller (Requirement M-2 & M-4)', () 
       consentStatus: 'opted_in',
       adminDisabled: false,
       role: 'owner',
+      userId: ownerUser.id,
     });
 
     await updateZoomHostConsent(sql, {
@@ -136,6 +137,7 @@ describe('Stage 12: Zoom Recording Fallback Poller (Requirement M-2 & M-4)', () 
       consentStatus: 'opted_out',
       adminDisabled: false,
       role: 'owner',
+      userId: ownerUser.id,
     });
   });
 

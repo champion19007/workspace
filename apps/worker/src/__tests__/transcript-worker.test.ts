@@ -112,6 +112,7 @@ describe('Stage 13: Transcript Retrieval, Normalization, Evidence Anchors, and S
       consentStatus: 'opted_in',
       adminDisabled: false,
       role: 'owner',
+      userId: ownerUser.id,
     });
   });
 

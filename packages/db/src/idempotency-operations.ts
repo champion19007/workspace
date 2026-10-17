@@ -1,5 +1,5 @@
-import { eq, and, lt } from 'drizzle-orm';
-import { type DatabaseInstance, type TenantTransaction } from './client.js';
+import { eq, and } from 'drizzle-orm';
+import { loginSql, withTenantContext, type DatabaseInstance, type TenantTransaction } from './client.js';
 import { idempotencyKeys } from './schema/index.js';
 
 export interface IdempotencyCheckResultNew {
@@ -37,15 +37,23 @@ export interface IdempotencyKeyParams {
   retentionHours?: number;
 }
 
+type Db = DatabaseInstance | TenantTransaction;
+
+/** Each statement in its own tenant transaction, so a failed insert (23505) can be followed by a re-read. */
+function scoped(db: Db, orgId: string, actorId: string) {
+  return <T>(fn: (tx: TenantTransaction) => Promise<T>) => withTenantContext(db, { orgId, userId: actorId }, fn);
+}
+
 export async function checkOrCreateIdempotencyKey(
-  db: DatabaseInstance | TenantTransaction,
+  db: Db,
   params: IdempotencyKeyParams
 ): Promise<IdempotencyCheckResult> {
   const { orgId, actorId, key, operation, fingerprint, retentionHours = 24 } = params;
+  const run = scoped(db, orgId, actorId);
   const now = new Date();
 
   // 1. Check existing record
-  const [existing] = await db
+  const [existing] = await run((tx) => tx
     .select()
     .from(idempotencyKeys)
     .where(
@@ -55,14 +63,14 @@ export async function checkOrCreateIdempotencyKey(
         eq(idempotencyKeys.key, key)
       )
     )
-    .limit(1);
+    .limit(1));
 
   if (existing) {
     // If expired, remove and allow fresh execution
     if (existing.expiresAt < now) {
-      await db
+      await run((tx) => tx
         .delete(idempotencyKeys)
-        .where(eq(idempotencyKeys.id, existing.id));
+        .where(eq(idempotencyKeys.id, existing.id)));
     } else {
       if (existing.status === 'pending') {
         return { state: 'in_flight' };
@@ -85,7 +93,7 @@ export async function checkOrCreateIdempotencyKey(
   const expiresAt = new Date(now.getTime() + retentionHours * 3600 * 1000);
 
   try {
-    const [inserted] = await db
+    const [inserted] = await run((tx) => tx
       .insert(idempotencyKeys)
       .values({
         orgId,
@@ -96,7 +104,7 @@ export async function checkOrCreateIdempotencyKey(
         status: 'pending',
         expiresAt,
       })
-      .returning({ id: idempotencyKeys.id });
+      .returning({ id: idempotencyKeys.id }));
 
     if (!inserted) {
       throw new Error('Failed to insert idempotency key');
@@ -110,7 +118,7 @@ export async function checkOrCreateIdempotencyKey(
     // Handle concurrent insertion race condition (PostgreSQL unique constraint 23505)
     const pgError = err as { code?: string };
     if (pgError.code === '23505') {
-      const [racing] = await db
+      const [racing] = await run((tx) => tx
         .select()
         .from(idempotencyKeys)
         .where(
@@ -120,7 +128,7 @@ export async function checkOrCreateIdempotencyKey(
             eq(idempotencyKeys.key, key)
           )
         )
-        .limit(1);
+        .limit(1));
 
       if (racing && racing.status === 'completed') {
         if (racing.fingerprint !== fingerprint) {
@@ -140,7 +148,7 @@ export async function checkOrCreateIdempotencyKey(
 }
 
 export async function completeIdempotencyKey(
-  db: DatabaseInstance | TenantTransaction,
+  db: Db,
   params: {
     orgId: string;
     actorId: string;
@@ -150,7 +158,7 @@ export async function completeIdempotencyKey(
     responseBody?: unknown;
   }
 ): Promise<void> {
-  await db
+  await scoped(db, params.orgId, params.actorId)((tx) => tx
     .update(idempotencyKeys)
     .set({
       status: 'completed',
@@ -164,11 +172,11 @@ export async function completeIdempotencyKey(
         eq(idempotencyKeys.actorId, params.actorId),
         eq(idempotencyKeys.key, params.key)
       )
-    );
+    ));
 }
 
 export async function failIdempotencyKey(
-  db: DatabaseInstance | TenantTransaction,
+  db: Db,
   params: {
     orgId: string;
     actorId: string;
@@ -177,7 +185,7 @@ export async function failIdempotencyKey(
     errorPayload?: unknown;
   }
 ): Promise<void> {
-  await db
+  await scoped(db, params.orgId, params.actorId)((tx) => tx
     .update(idempotencyKeys)
     .set({
       status: 'failed',
@@ -190,15 +198,13 @@ export async function failIdempotencyKey(
         eq(idempotencyKeys.actorId, params.actorId),
         eq(idempotencyKeys.key, params.key)
       )
-    );
+    ));
 }
 
+/** Expired keys of every organization (narrowly privileged entry point of migration 0015; worker only). */
 export async function purgeExpiredIdempotencyKeys(
   db: DatabaseInstance
 ): Promise<number> {
-  const result = await db
-    .delete(idempotencyKeys)
-    .where(lt(idempotencyKeys.expiresAt, new Date()))
-    .returning({ id: idempotencyKeys.id });
-  return result.length;
+  const [row] = await loginSql(db)<Array<{ purged: number }>>`SELECT sys_idempotency_purge() AS purged`;
+  return row!.purged;
 }

@@ -12,15 +12,14 @@ import {
   getKolkataTodayDateString,
   NotFoundError,
 } from '@workspace/core';
-import type { DbOrSql } from './node-operations.js';
+import { loginSql, tenantSql, type DbOrSql } from './client.js';
+import { ltreeLabelToUuid } from './node-operations.js';
 import { insertOutboxEvent } from './outbox-operations.js';
 
-function getRawSql(db: DbOrSql): any {
-  if (typeof (db as any).unsafe === 'function') {
-    return db;
-  }
-  return (db as any).$client;
-}
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Rollups are computed by the worker (workspace_system); nested calls keep their caller's binding. */
+const systemScope = (db: DbOrSql, orgId: string): any => tenantSql(db, { orgId, system: true });
 
 // ---------------------------------------------------------------------------
 // 1. Direct Project Rollup Calculation (SQL Parity)
@@ -35,7 +34,7 @@ export async function calculateProjectRollup(
     generation?: number;
   }
 ): Promise<NodeRollupDTO> {
-  const sql = getRawSql(db);
+  const sql = systemScope(db, params.orgId);
   const dateContext = params.dateContext || getKolkataTodayDateString();
   const datePlus7 = addCalendarDays(dateContext, 7);
   const generation = params.generation ?? 1;
@@ -126,11 +125,11 @@ export async function markNodesDirty(
     debounceSeconds?: number;
   }
 ): Promise<string[]> {
-  const sql = getRawSql(db);
+  // Any member who changes project content marks it dirty: tenant context, no acting user needed.
+  const sql: any = tenantSql(db, { orgId: params.orgId });
   const debounceSeconds = params.debounceSeconds ?? 10;
   if (!params.nodeIds.length) return [];
 
-  // Find all ancestor node IDs by inspecting path of all requested nodes
   const nodes = await sql`
     SELECT id, path::text as path
     FROM nodes
@@ -138,20 +137,14 @@ export async function markNodesDirty(
       AND id IN ${sql(params.nodeIds)}
   `;
 
+  // Ancestors come from the path itself (each label is an ancestor's id), not from reading the ancestor
+  // rows: those may be private nodes the acting user cannot see, and they still need recomputing.
   const affectedIdSet = new Set<string>();
   for (const n of nodes) {
     affectedIdSet.add(n.id);
-    if (n.path) {
-      // Path format is label.label... where labels are base32/hex representations of uuids
-      // Query ancestors via ltree containment
-      const ancestors = await sql`
-        SELECT id FROM nodes
-        WHERE org_id = ${params.orgId}
-          AND ${n.path}::ltree <@ path
-      `;
-      for (const anc of ancestors) {
-        affectedIdSet.add(anc.id);
-      }
+    for (const label of String(n.path ?? '').split('.')) {
+      const ancestorId = ltreeLabelToUuid(label);
+      if (UUID_RE.test(ancestorId)) affectedIdSet.add(ancestorId);
     }
   }
 
@@ -176,7 +169,7 @@ export async function markNodesDirty(
     `;
 
     // Also write an outbox event so workers or event listeners can trigger processing
-    await insertOutboxEvent(db, {
+    await insertOutboxEvent(sql, {
       orgId: params.orgId,
       topic: 'rollup',
       payload: {
@@ -201,7 +194,7 @@ export async function recomputeAndStoreNodeRollup(
     targetGeneration?: number;
   }
 ): Promise<NodeRollupDTO | null> {
-  const sql = getRawSql(db);
+  const sql = systemScope(db, params.orgId);
 
   // Check node kind
   const [node] = await sql`
@@ -227,7 +220,7 @@ export async function recomputeAndStoreNodeRollup(
   let rollup: NodeRollupDTO;
 
   if (node.kind === 'project') {
-    rollup = await calculateProjectRollup(db, {
+    rollup = await calculateProjectRollup(sql, {
       orgId: params.orgId,
       projectId: params.nodeId,
       generation,
@@ -341,26 +334,11 @@ export async function processDueRollupJobs(
     limit?: number;
   }
 ): Promise<number> {
-  const sql = getRawSql(db);
   const limit = params.limit ?? 20;
 
-  // Claim due dirty nodes with FOR UPDATE SKIP LOCKED
-  const claimed = await sql`
-    WITH to_claim AS (
-      SELECT node_id, org_id
-      FROM node_rollup_dirty
-      WHERE debounce_until <= now()
-        AND (locked_at IS NULL OR locked_at < now() - interval '60 seconds')
-      ORDER BY requested_at ASC
-      LIMIT ${limit}
-      FOR UPDATE SKIP LOCKED
-    )
-    UPDATE node_rollup_dirty d
-    SET locked_at = now(),
-        locked_by = ${params.workerId}
-    FROM to_claim c
-    WHERE d.node_id = c.node_id
-    RETURNING d.node_id as "nodeId", d.org_id as "orgId"
+  // Claim due dirty nodes across organizations (FOR UPDATE SKIP LOCKED inside sys_rollup_claim)
+  const claimed = await loginSql(db)<Array<{ nodeId: string; orgId: string }>>`
+    SELECT node_id AS "nodeId", org_id AS "orgId" FROM sys_rollup_claim(${params.workerId}, ${limit})
   `;
 
   let count = 0;
@@ -373,7 +351,7 @@ export async function processDueRollupJobs(
       count++;
     } catch {
       // Unlock on failure so it can be retried
-      await sql`
+      await systemScope(db, item.orgId)`
         UPDATE node_rollup_dirty
         SET locked_at = NULL, locked_by = NULL
         WHERE node_id = ${item.nodeId}
@@ -398,7 +376,7 @@ export async function getPermissionSafeRollup(
     dateContext?: string;
   }
 ): Promise<NodeRollupDTO> {
-  const sql = getRawSql(db);
+  const sql: any = tenantSql(db, { orgId: params.orgId, userId: params.userId, role: params.role });
   const dateContext = params.dateContext || getKolkataTodayDateString();
   const isPrivileged = params.role === 'owner' || params.role === 'admin';
 
@@ -438,7 +416,7 @@ export async function getPermissionSafeRollup(
       dirty
     ) {
       const targetGen = dirty?.dirty_generation ?? cached?.provenance?.generation ?? 1;
-      const fresh = await calculateProjectRollup(db, {
+      const fresh = await calculateProjectRollup(sql, {
         orgId: params.orgId,
         projectId: params.nodeId,
         dateContext,
@@ -510,7 +488,7 @@ export async function getPermissionSafeRollup(
       pDirty
     ) {
       const pGen = pDirty?.dirty_generation ?? pRollup?.provenance?.generation ?? 1;
-      pRollup = await calculateProjectRollup(db, {
+      pRollup = await calculateProjectRollup(sql, {
         orgId: params.orgId,
         projectId: p.id,
         dateContext,
@@ -597,7 +575,7 @@ export async function getProjectDashboard(
     dateContext?: string;
   }
 ): Promise<ProjectDashboardDTO> {
-  const sql = getRawSql(db);
+  const sql: any = tenantSql(db, { orgId: params.orgId, userId: params.userId, role: params.role });
   const isPrivileged = params.role === 'owner' || params.role === 'admin';
 
   const [project] = await sql`
@@ -717,7 +695,7 @@ export async function getLeadershipSummary(
     dateContext?: string;
   }
 ): Promise<LeadershipSummaryDTO> {
-  const sql = getRawSql(db);
+  const sql: any = tenantSql(db, { orgId: params.orgId, userId: params.userId, role: params.role });
   const dateContext = params.dateContext || getKolkataTodayDateString();
   const isPrivileged = params.role === 'owner' || params.role === 'admin';
   const filters = params.filters || {};
@@ -779,7 +757,7 @@ export async function getLeadershipSummary(
       pDirty
     ) {
       const pGen = pDirty?.dirty_generation ?? pRollup?.provenance?.generation ?? 1;
-      pRollup = await calculateProjectRollup(db, {
+      pRollup = await calculateProjectRollup(sql, {
         orgId: params.orgId,
         projectId: prj.id,
         dateContext,

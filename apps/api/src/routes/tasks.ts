@@ -395,6 +395,8 @@ export const taskRoutes: FastifyPluginAsync<{ db: DatabaseInstance; ports?: AppP
         projectId,
         status: status as TaskStatus,
         parentTaskId,
+        userId: request.user!.id,
+        role: request.tenant!.role,
       });
 
       return reply.status(200).send(result);

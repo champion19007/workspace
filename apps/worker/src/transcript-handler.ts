@@ -17,6 +17,7 @@ import {
   getOrRefreshZoomCredentials,
   listPendingReadyMeetings,
   type Sql,
+  tenantSql,
 } from '@workspace/db';
 
 interface RawMeetingForHandler {
@@ -54,12 +55,14 @@ interface RawHostConsentRow {
  * preserves raw source in BlobStore, normalizes segments, and commits atomically.
  */
 export async function handleTranscriptReadyJob(
-  sql: Sql,
+  db: Sql,
   ports: AppPorts,
   logger: any,
   data: MeetingTranscriptReadyPayload
 ): Promise<boolean> {
   const { orgId, meetingId } = data;
+  // Background job for one organization: every statement runs as workspace_system under its org context.
+  const sql = tenantSql(db, { orgId, system: true });
 
   logger.info({ orgId, meetingId }, 'Processing meeting.transcript_ready queue job');
 

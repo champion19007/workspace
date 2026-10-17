@@ -1,6 +1,6 @@
 import type { FastifyBaseLogger } from 'fastify';
 import { type AppPorts, type MeetingSuggestionsCreatedPayload } from '@workspace/core';
-import { type Sql, enrichMeetingSuggestions } from '@workspace/db';
+import { type Sql, enrichMeetingSuggestions, tenantSql } from '@workspace/db';
 
 /**
  * Handles 'meeting.suggestions_created' queue jobs:
@@ -13,12 +13,14 @@ import { type Sql, enrichMeetingSuggestions } from '@workspace/db';
  * STRICT INVARIANT: ZERO mutations on the tasks table.
  */
 export async function handleSuggestionsCreatedJob(
-  sql: Sql,
+  db: Sql,
   ports: AppPorts,
   logger: FastifyBaseLogger | Console,
   payload: MeetingSuggestionsCreatedPayload
 ): Promise<boolean> {
   const { orgId, meetingId } = payload;
+  // Background job for one organization: every statement runs as workspace_system under its org context.
+  const sql = tenantSql(db, { orgId, system: true });
   logger.info({ orgId, meetingId }, 'Starting suggestion enrichment job (dedup, owner, due date)');
 
   const [meeting] = await sql<Array<{ id: string; skipped: boolean }>>`
