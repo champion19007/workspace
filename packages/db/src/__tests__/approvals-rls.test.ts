@@ -12,9 +12,10 @@ import { decideActionItem } from '../approval-operations.js';
 const ADMIN_DB_URL =
   process.env['DATABASE_DIRECT_URL'] ??
   'postgresql://workspace_user:workspace_dev_password@localhost:5432/workspace_dev?sslmode=disable';
+// The API login role (Stage 17b); every transaction below assumes workspace_app via withTenantContext.
 const APP_DB_URL =
-  process.env['DATABASE_APP_URL'] ??
-  'postgresql://workspace_app:workspace_app_password@localhost:5432/workspace_dev?sslmode=disable';
+  process.env['DATABASE_API_URL'] ??
+  'postgresql://workspace_api:workspace_api_dev_password@localhost:5432/workspace_dev?sslmode=disable';
 
 describe('Stage 17: approval tables under the restricted runtime role', () => {
   let admin: postgres.Sql;

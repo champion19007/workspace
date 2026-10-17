@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getServerContext } from '@/lib/server-context';
 import { SESSION_COOKIE_NAME, verifyAndRefreshSession } from '@/lib/session';
 import { resolveTenantForUser } from '@/lib/resolve-org';
-import { getMeetingById, skipMeetingAndCleanup } from '@workspace/db';
+import { authorizeMeetingAccess, skipMeetingAndCleanup } from '@workspace/db';
 import {
   DomainError,
   SkipMeetingRequestSchema,
@@ -30,6 +30,27 @@ export async function POST(
 
   try {
     const tenant = await resolveTenantForUser(db, orgIdentifier, session.userId);
+
+    // Centralised meeting authorization first: 404 for inaccessible private meetings, 403 for Viewers
+    const auth = await authorizeMeetingAccess(sql, {
+      orgId: tenant.orgId,
+      meetingId,
+      userId: session.userId,
+      userRole: tenant.role,
+      action: 'mutate',
+    });
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.errorCode, message: auth.errorMessage }, { status: auth.httpStatus });
+    }
+    const currentMeeting = auth.meeting!;
+
+    // Stricter rule for this route: Members may only skip meetings they hosted (verified binding only)
+    if (tenant.role === 'member' && currentMeeting.hostId !== session.userId) {
+      return NextResponse.json(
+        { error: 'FORBIDDEN', message: 'You can only skip meetings you hosted' },
+        { status: 403 }
+      );
+    }
 
     // 1. Enforce strong If-Match header (RFC 9110)
     const ifMatchHeader = request.headers.get('if-match');
@@ -84,34 +105,7 @@ export async function POST(
       );
     }
 
-    // 3. Check meeting existence and RBAC
-    const currentMeeting = await getMeetingById(sql, tenant.orgId, meetingId);
-    if (!currentMeeting) {
-      return NextResponse.json(
-        { error: 'NOT_FOUND', message: 'Meeting not found' },
-        { status: 404 }
-      );
-    }
-
-    if (tenant.role === 'viewer') {
-      return NextResponse.json(
-        { error: 'FORBIDDEN', message: 'Viewers cannot skip meetings' },
-        { status: 403 }
-      );
-    }
-
-    if (tenant.role === 'member') {
-      const isHost =
-        currentMeeting.hostId === session.userId; // verified binding only; no email fallback
-      if (!isHost) {
-        return NextResponse.json(
-          { error: 'FORBIDDEN', message: 'You can only skip meetings you hosted' },
-          { status: 403 }
-        );
-      }
-    }
-
-    // 4. Verify version match
+    // 3. Verify version match
     if (currentMeeting.version !== expectedVersion) {
       const response = NextResponse.json(
         {
@@ -125,10 +119,12 @@ export async function POST(
       return response;
     }
 
-    // 5. Execute skip and cleanup
+    // 4. Execute skip and cleanup
     const updated = await skipMeetingAndCleanup(sql, {
       orgId: tenant.orgId,
       meetingId,
+      actorUserId: session.userId,
+      role: tenant.role,
       ifMatchVersion: expectedVersion,
       reason: parsed.data.reason,
       blobStore: ports.blobStore,

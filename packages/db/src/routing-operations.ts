@@ -1,4 +1,3 @@
-import type postgres from 'postgres';
 import {
   ValidationError,
   NotFoundError,
@@ -10,15 +9,8 @@ import {
   type MeetingDTO,
   ProjectRoutingResultSchema,
 } from '@workspace/core';
-import type { DbOrSql } from './node-operations.js';
+import { tenantSql, type DbOrSql } from './client.js';
 import { insertOutboxEvent } from './outbox-operations.js';
-
-function getSql(target: DbOrSql): postgres.Sql {
-  if (target && typeof target === 'object' && '$client' in target) {
-    return (target as any).$client as postgres.Sql;
-  }
-  return target as postgres.Sql;
-}
 
 export interface EvaluateRoutingResult {
   routed: boolean;
@@ -66,7 +58,7 @@ export async function getRoutingCandidatesForUser(
     userId?: string | null;
   }
 ): Promise<ProjectRoutingCandidate[]> {
-  const sql = getSql(target);
+  const sql = tenantSql(target, { orgId: params.orgId, userId: params.userId ?? undefined });
   const { orgId, userId } = params;
 
   let isPrivileged = false;
@@ -131,7 +123,7 @@ export async function evaluateAndRouteMeeting(
     orgGlossary?: Record<string, string>;
   }
 ): Promise<EvaluateRoutingResult> {
-  const sql = getSql(target);
+  const sql = tenantSql(target, { orgId: params.orgId, system: true });
   const { orgId, meetingId, llmAdapter, expectedProcessingGeneration, orgGlossary } = params;
 
   // 1. Fetch meeting record
@@ -455,7 +447,7 @@ export async function manuallyRouteMeeting(
     expectedVersion?: number;
   }
 ): Promise<MeetingDTO> {
-  const sql = getSql(target);
+  const sql = tenantSql(target, { orgId: params.orgId, userId: params.actorId, role: params.role });
   const { orgId, meetingId, nodeId, actorId, role, expectedVersion } = params;
 
   // 1. Fetch meeting
@@ -637,7 +629,7 @@ export async function resolveGuestConsent(
     attestationNotes?: string;
   }
 ): Promise<MeetingDTO> {
-  const sql = getSql(target);
+  const sql = tenantSql(target, { orgId: params.orgId, userId: params.actorId });
   const { orgId, meetingId, actorId, guestConsentStatus, attestationNotes } = params;
 
   return sql.begin(async (txn) => {

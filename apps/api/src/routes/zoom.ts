@@ -39,7 +39,7 @@ export const zoomRoutes: FastifyPluginAsync<ZoomRoutesOptions> = async (
       preHandler: [app.authenticate, app.requireOrgContext],
     },
     async (request, reply) => {
-      const integration = await getZoomIntegration(sql, request.tenant!.orgId);
+      const integration = await getZoomIntegration(sql, request.tenant!.orgId, request.user!.id);
       return reply.status(200).send({ integration });
     }
   );
@@ -214,6 +214,7 @@ export const zoomRoutes: FastifyPluginAsync<ZoomRoutesOptions> = async (
         consentStatus: parsed.data.consentStatus,
         adminDisabled: parsed.data.adminDisabled,
         role: request.tenant!.role,
+        userId: request.user!.id,
       });
 
       return reply.status(200).send({ host });

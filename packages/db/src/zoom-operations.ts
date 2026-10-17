@@ -12,7 +12,7 @@ import {
   AuthorizationError,
   IntegrationError,
 } from '@workspace/core';
-import { type Sql } from './index.js';
+import { loginSql, tenantSql, type Sql } from './client.js';
 
 interface RawIntegrationRow {
   id: string;
@@ -91,7 +91,7 @@ function mapHostConsent(row: RawHostConsentRow): ZoomHostConsentDTO {
  * Creates cryptographically secure, single-use state and PKCE verifier/challenge.
  */
 export async function createOAuthState(
-  sql: Sql,
+  db: Sql,
   params: {
     orgId: string;
     userId: string;
@@ -100,6 +100,7 @@ export async function createOAuthState(
     ttlMinutes?: number;
   }
 ): Promise<{ state: string; codeVerifier: string; codeChallenge: string }> {
+  const sql = tenantSql(db, { orgId: params.orgId, userId: params.userId });
   const state = crypto.randomBytes(32).toString('hex');
   const codeVerifier = crypto.randomBytes(32).toString('base64url');
   const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
@@ -135,7 +136,7 @@ export async function createOAuthState(
  * Prevents replay attacks and validates session/tenant binding.
  */
 export async function consumeOAuthState(
-  sql: Sql,
+  db: Sql,
   params: {
     state: string;
     orgId: string;
@@ -148,6 +149,7 @@ export async function consumeOAuthState(
   codeVerifier: string;
   redirectUri: string;
 }> {
+  const sql = tenantSql(db, { orgId: params.orgId, userId: params.userId });
   const rows = await sql<Array<{
     state: string;
     org_id: string;
@@ -191,10 +193,12 @@ export async function consumeOAuthState(
  * Retrieves the Zoom integration for an organization.
  */
 export async function getZoomIntegration(
-  sql: Sql,
-  orgId: string
+  db: Sql,
+  orgId: string,
+  /** Integration rows are visible to the organization's Owners and Admins (RLS). */
+  userId?: string
 ): Promise<ZoomIntegrationDTO | null> {
-  const rows = await sql<RawIntegrationRow[]>`
+  const rows = await tenantSql(db, { orgId, userId })<RawIntegrationRow[]>`
     SELECT * FROM integrations
     WHERE org_id = ${orgId} AND provider = 'zoom'
     LIMIT 1
@@ -214,7 +218,7 @@ export async function getZoomIntegration(
  * Increments connection generation fencing counter.
  */
 export async function connectZoomIntegration(
-  sql: Sql,
+  db: Sql,
   secretStore: SecretStorePort,
   zoomClient: ZoomClientPort,
   params: {
@@ -227,18 +231,16 @@ export async function connectZoomIntegration(
     tokens: ZoomTokenResponse;
   }
 ): Promise<ZoomIntegrationDTO> {
-  // 1. Check for collision across active integrations:
-  // At most one active Workspace organization per Zoom account.
-  const collisionRows = await sql<Array<{ org_id: string }>>`
-    SELECT org_id FROM integrations
-    WHERE provider = 'zoom'
-      AND account_id = ${params.accountId}
-      AND status != 'disconnected'
-      AND org_id != ${params.orgId}
-    LIMIT 1
+  const sql = tenantSql(db, { orgId: params.orgId, userId: params.userId });
+
+  // 1. Check for collision across active integrations (resolved across organizations):
+  // At most one active Workspace organization per Zoom account (also enforced by
+  // uq_integrations_active_provider_account).
+  const [existing] = await loginSql(db)<Array<{ org_id: string }>>`
+    SELECT org_id FROM sys_zoom_account_integration(${params.accountId})
   `;
 
-  if (collisionRows.length > 0) {
+  if (existing && existing.org_id !== params.orgId) {
     throw new ConflictError('This Zoom account is already connected to another organization in Workspace');
   }
 
@@ -372,7 +374,7 @@ export async function connectZoomIntegration(
  * bumps connection generation, and emits outbox event.
  */
 export async function disconnectZoomIntegration(
-  sql: Sql,
+  db: Sql,
   secretStore: SecretStorePort,
   zoomClient: ZoomClientPort,
   params: {
@@ -384,6 +386,7 @@ export async function disconnectZoomIntegration(
   if (params.role !== 'owner' && params.role !== 'admin') {
     throw new AuthorizationError('Only organization Owners or Admins can disconnect integrations');
   }
+  const sql = tenantSql(db, { orgId: params.orgId, userId: params.userId, role: params.role });
 
   const existingRows = await sql<RawIntegrationRow[]>`
     SELECT * FROM integrations
@@ -451,13 +454,14 @@ export async function disconnectZoomIntegration(
  * Lists host consents for an organization.
  */
 export async function listZoomHostConsents(
-  sql: Sql,
+  db: Sql,
   params: {
     orgId: string;
     query?: string;
     consentStatus?: string;
   }
 ): Promise<ZoomHostConsentDTO[]> {
+  const sql = tenantSql(db, { orgId: params.orgId });
   let rows: RawHostConsentRow[];
 
   if (params.consentStatus && params.query) {
@@ -499,15 +503,18 @@ export async function listZoomHostConsents(
  * Updates host consent status or admin processing override.
  */
 export async function updateZoomHostConsent(
-  sql: Sql,
+  db: Sql,
   params: {
     orgId: string;
     zoomUserId: string;
     consentStatus?: ZoomHostConsentStatus;
     adminDisabled?: boolean;
     role: string;
+    /** The acting user: consent rows are written by Owners/Admins (or the host itself, see updateMyHostConsent). */
+    userId?: string;
   }
 ): Promise<ZoomHostConsentDTO> {
+  const sql = tenantSql(db, { orgId: params.orgId, userId: params.userId, role: params.role });
   // Disabling host processing or changing status requires admin or owner role
   if (params.adminDisabled !== undefined && params.role !== 'owner' && params.role !== 'admin') {
     throw new AuthorizationError('Only organization Owners or Admins can toggle host processing overrides');
@@ -555,11 +562,13 @@ export async function updateZoomHostConsent(
  * 4. Invalid grant / revocation transitions connection to needs_reauthorization cleanly
  */
 export async function getOrRefreshZoomCredentials(
-  sql: Sql,
+  db: Sql,
   secretStore: SecretStorePort,
   zoomClient: ZoomClientPort,
   orgId: string
 ): Promise<{ accessToken: string; accountId: string }> {
+  // Credentials are refreshed by background processing on behalf of the organization.
+  const sql = tenantSql(db, { orgId, system: true });
   // Step 1: Read current integration
   const rows = await sql<RawIntegrationRow[]>`
     SELECT * FROM integrations
@@ -719,7 +728,7 @@ export async function getOrRefreshZoomCredentials(
  * Retrieves the host consent status for the calling user.
  */
 export async function getMyHostConsent(
-  sql: Sql,
+  db: Sql,
   params: {
     orgId: string;
     userId: string;
@@ -727,6 +736,7 @@ export async function getMyHostConsent(
   }
 ): Promise<ZoomHostConsentDTO | null> {
   const { orgId, userId, userEmail } = params;
+  const sql = tenantSql(db, { orgId, userId });
   const rows = await sql<RawHostConsentRow[]>`
     SELECT * FROM zoom_host_consents
     WHERE org_id = ${orgId}
@@ -745,7 +755,7 @@ export async function getMyHostConsent(
  * Fences in-flight processing and triggers cleanup if opting out.
  */
 export async function updateMyHostConsent(
-  sql: Sql,
+  db: Sql,
   params: {
     orgId: string;
     userId: string;
@@ -755,6 +765,7 @@ export async function updateMyHostConsent(
   }
 ): Promise<ZoomHostConsentDTO> {
   const { orgId, userId, userEmail, userName, consentStatus } = params;
+  const sql = tenantSql(db, { orgId, userId });
 
   // Check existing consent record
   const existingRows = await sql<RawHostConsentRow[]>`
@@ -803,11 +814,11 @@ export async function updateMyHostConsent(
     `;
     updated = rows[0]!;
   } else {
-    // Get integration ID
-    const [integration] = await sql<Array<{ id: string }>>`
-      SELECT id FROM integrations WHERE org_id = ${orgId} AND provider = 'zoom' LIMIT 1
+    // Integration rows are Owner/Admin-only: the tenant-confined helper returns just its id.
+    const [integration] = await sql<Array<{ id: string | null }>>`
+      SELECT sys_zoom_integration_id_for_tenant() AS id
     `;
-    if (!integration) {
+    if (!integration?.id) {
       throw new NotFoundError('No Zoom integration found for organization');
     }
 

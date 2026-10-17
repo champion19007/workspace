@@ -3,6 +3,7 @@ import {
   resolveMeetingSpeakers,
   evaluateAndRouteMeeting,
   getOrRefreshZoomCredentials,
+  tenantSql,
 } from '@workspace/db';
 import {
   type AppPorts,
@@ -21,12 +22,14 @@ import type { FastifyBaseLogger } from 'fastify';
  * 6. Auto-routes if confidence >= 0.70; enters AskHost (awaiting_project_choice) if < 0.70.
  */
 export async function handleTranscriptIngestedJob(
-  sql: Sql,
+  db: Sql,
   ports: AppPorts,
   logger: FastifyBaseLogger | Console,
   payload: MeetingTranscriptIngestedPayload
 ): Promise<boolean> {
   const { orgId, meetingId, processingGeneration } = payload;
+  // Background job for one organization: every statement runs as workspace_system under its org context.
+  const sql = tenantSql(db, { orgId, system: true });
 
   logger.info({ orgId, meetingId }, 'Starting speaker resolution and project routing for ingested transcript');
 

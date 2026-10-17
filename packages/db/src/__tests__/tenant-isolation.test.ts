@@ -19,9 +19,10 @@ const ADMIN_DB_URL =
   process.env['DATABASE_DIRECT_URL'] ??
   'postgresql://workspace_user:workspace_dev_password@localhost:5432/workspace_dev?sslmode=disable';
 
+// The API login role (Stage 17b): no table privileges of its own; tenant work runs under SET LOCAL ROLE workspace_app.
 const APP_DB_URL =
-  process.env['DATABASE_APP_URL'] ??
-  'postgresql://workspace_app:workspace_app_password@localhost:5432/workspace_dev?sslmode=disable';
+  process.env['DATABASE_API_URL'] ??
+  'postgresql://workspace_api:workspace_api_dev_password@localhost:5432/workspace_dev?sslmode=disable';
 
 describe('Database Foundation & Tenant Isolation Suite', () => {
   let adminSql: postgres.Sql;
@@ -32,7 +33,7 @@ describe('Database Foundation & Tenant Isolation Suite', () => {
     // Seed database with deterministic multi-tenant fixtures
     await seedTestFixtures(adminSql);
 
-    // Initialize application client connected as restricted non-superuser role `workspace_app`
+    // Initialize application client connected as the restricted non-superuser login role `workspace_api`
     appClient = createApiClient({
       connectionString: APP_DB_URL,
       maxConnections: 5,
@@ -132,19 +133,20 @@ describe('Database Foundation & Tenant Isolation Suite', () => {
   // 2. Fail-Closed on Missing Tenant Context
   // ============================================================================
   describe('Fail-Closed Enforcement Without Tenant Context', () => {
-    it('returns zero rows for tenant tables when no org_id session context is set', async () => {
-      // Connect as workspace_app without calling withTenantContext / set_config
-      const directTasks = await appClient.db.select().from(tasks);
+    it('denies tenant tables outright when no tenant context is set', async () => {
+      // The login role holds no table privileges: without withTenantContext nothing is readable at all
+      await expect(appClient.db.select().from(tasks)).rejects.toThrow(/permission denied/);
+      await expect(appClient.db.select().from(docs)).rejects.toThrow(/permission denied/);
+      await expect(appClient.db.select().from(nodes)).rejects.toThrow(/permission denied/);
+      await expect(appClient.db.select().from(orgs)).rejects.toThrow(/permission denied/);
+    });
+
+    it('returns zero rows under the tenant role when no org_id is set', async () => {
+      const directTasks = await appClient.sql.begin(async (txn) => {
+        await txn`SELECT set_config('role', 'workspace_app', true)`;
+        return txn`SELECT id FROM tasks`;
+      });
       expect(directTasks).toHaveLength(0);
-
-      const directDocs = await appClient.db.select().from(docs);
-      expect(directDocs).toHaveLength(0);
-
-      const directNodes = await appClient.db.select().from(nodes);
-      expect(directNodes).toHaveLength(0);
-
-      const directOrgs = await appClient.db.select().from(orgs);
-      expect(directOrgs).toHaveLength(0);
     });
 
     it('rejects INSERT operations when no org_id session context is set', async () => {
@@ -420,9 +422,10 @@ describe('Database Foundation & Tenant Isolation Suite', () => {
       const [setting] = await appClient.sql`SELECT current_setting('app.org_id', true) as org_id`;
       expect(setting?.org_id).toBe('');
 
-      // 3. Querying tasks outside of context yields 0 rows
-      const unauthenticatedTasks = await appClient.db.select().from(tasks);
-      expect(unauthenticatedTasks).toHaveLength(0);
+      // 3. Querying tasks outside of context is denied (the connection is back on the login role)
+      const [role] = await appClient.sql`SELECT current_user`;
+      expect(role?.current_user).toBe('workspace_api');
+      await expect(appClient.db.select().from(tasks)).rejects.toThrow(/permission denied/);
     });
   });
 

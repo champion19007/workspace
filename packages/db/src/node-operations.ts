@@ -1,4 +1,3 @@
-import type postgres from 'postgres';
 import {
   ValidationError,
   NotFoundError,
@@ -9,16 +8,9 @@ import {
 } from '@workspace/core';
 import { insertOutboxEvent } from './outbox-operations.js';
 import { markNodesDirty } from './rollup-operations.js';
-import type { DatabaseInstance } from './client.js';
+import { tenantSql, type DbOrSql } from './client.js';
 
-export type DbOrSql = postgres.Sql | DatabaseInstance;
-
-function getSql(target: DbOrSql): postgres.Sql {
-  if (target && typeof target === 'object' && '$client' in target) {
-    return (target as any).$client as postgres.Sql;
-  }
-  return target as postgres.Sql;
-}
+export type { DbOrSql };
 
 /**
  * Converts a UUID into a PostgreSQL ltree-compatible label.
@@ -117,7 +109,7 @@ export async function canUserAccessNode(
   target: DbOrSql,
   params: { orgId: string; nodeId: string; userId: string; role: string }
 ): Promise<boolean> {
-  const sql = getSql(target);
+  const sql = tenantSql(target, { orgId: params.orgId, userId: params.userId, role: params.role });
   const { orgId, nodeId, userId, role } = params;
 
   // Owners and Admins have administrative visibility across all org nodes
@@ -151,7 +143,7 @@ export async function createNode(
   target: DbOrSql,
   input: CreateNodeInput
 ): Promise<NodeRecord> {
-  const sql = getSql(target);
+  const sql = tenantSql(target, { orgId: input.orgId, userId: input.userId, role: input.role });
   const { orgId, userId, role, name, kind, parentId, description } = input;
   const visibility = input.visibility ?? 'public';
 
@@ -212,7 +204,9 @@ export async function createNode(
     const label = uuidToLtreeLabel(nodeId);
     const path = parentPath ? `${parentPath}.${label}` : label;
 
-    const [created] = await txn<NodeRecord[]>`
+    // No RETURNING: under RLS a private node becomes visible to a non-admin creator only once the creator's
+    // node membership exists, so it is read back after that row is written.
+    await txn`
       INSERT INTO nodes (
         id, org_id, parent_id, kind, name, description, path, visibility, rollup, version, created_by
       )
@@ -220,16 +214,7 @@ export async function createNode(
         ${nodeId}, ${orgId}, ${parentId ?? null}, ${kind}, ${name.trim()}, 
         ${description?.trim() ?? null}, ${path}::ltree, ${visibility}, '{}'::jsonb, 1, ${userId}
       )
-      RETURNING 
-        id, org_id as "orgId", parent_id as "parentId", kind, name, description,
-        key_prefix as "keyPrefix",
-        path::text as path, visibility, rollup, version, created_by as "createdBy",
-        archived_at as "archivedAt", created_at as "createdAt", updated_at as "updatedAt"
     `;
-
-    if (!created) {
-      throw new Error('Failed to create node record');
-    }
 
     // For private projects, immediately grant membership to creator in the same transaction
     if (visibility === 'private') {
@@ -238,6 +223,20 @@ export async function createNode(
         VALUES (${orgId}, ${nodeId}, ${userId})
         ON CONFLICT DO NOTHING
       `;
+    }
+
+    const [created] = await txn<NodeRecord[]>`
+      SELECT
+        id, org_id as "orgId", parent_id as "parentId", kind, name, description,
+        key_prefix as "keyPrefix",
+        path::text as path, visibility, rollup, version, created_by as "createdBy",
+        archived_at as "archivedAt", created_at as "createdAt", updated_at as "updatedAt"
+      FROM nodes
+      WHERE id = ${nodeId} AND org_id = ${orgId}
+    `;
+
+    if (!created) {
+      throw new Error('Failed to create node record');
     }
 
     // Write transactional outbox event
@@ -266,7 +265,7 @@ export async function getNodeById(
   target: DbOrSql,
   params: { orgId: string; nodeId: string; userId: string; role: string; includeArchived?: boolean }
 ): Promise<NodeRecord> {
-  const sql = getSql(target);
+  const sql = tenantSql(target, { orgId: params.orgId, userId: params.userId, role: params.role });
   const { orgId, nodeId, userId, role, includeArchived = false } = params;
 
   const [node] = await sql<NodeRecord[]>`
@@ -310,7 +309,7 @@ export async function getTree(
     includeArchived?: boolean;
   }
 ): Promise<TreeNodeItem[]> {
-  const sql = getSql(target);
+  const sql = tenantSql(target, { orgId: params.orgId, userId: params.userId, role: params.role });
   const { orgId, userId, role, rootNodeId, depth = 3, includeArchived = false } = params;
 
   let rootPath: string | null = null;
@@ -397,7 +396,7 @@ export async function listProjects(
     cursor?: string | null;
   }
 ): Promise<{ projects: (NodeRecord & { teamName: string | null; memberCount: number })[]; totalCount: number }> {
-  const sql = getSql(target);
+  const sql = tenantSql(target, { orgId: params.orgId, userId: params.userId, role: params.role });
   const { orgId, userId, role, teamId, search, limit = 50 } = params;
   const isPrivileged = role === 'owner' || role === 'admin';
 
@@ -501,7 +500,7 @@ export async function updateNode(
   target: DbOrSql,
   input: UpdateNodeInput
 ): Promise<NodeRecord> {
-  const sql = getSql(target);
+  const sql = tenantSql(target, { orgId: input.orgId, userId: input.actorUserId, role: input.role });
   const { orgId, nodeId, actorUserId, role, ifMatchVersion, name, description, visibility } = input;
 
   if (role === 'viewer') {
@@ -594,7 +593,7 @@ export async function moveSubtree(
   target: DbOrSql,
   input: MoveNodeInput
 ): Promise<{ movedRoot: NodeRecord; affectedCount: number }> {
-  const sql = getSql(target);
+  const sql = tenantSql(target, { orgId: input.orgId, userId: input.actorUserId, role: input.role });
   const { orgId, nodeId, newParentId, actorUserId, role, ifMatchVersion } = input;
 
   if (role !== 'owner' && role !== 'admin') {
@@ -741,7 +740,7 @@ export async function deleteOrArchiveNode(
   target: DbOrSql,
   input: DeleteNodeInput
 ): Promise<{ deleted: boolean; archived: boolean; affectedCount: number }> {
-  const sql = getSql(target);
+  const sql = tenantSql(target, { orgId: input.orgId, userId: input.actorUserId, role: input.role });
   const { orgId, nodeId, actorUserId, role, ifMatchVersion, archive = false } = input;
 
   if (role !== 'owner' && role !== 'admin') {
@@ -855,7 +854,7 @@ export async function listNodeMembers(
   target: DbOrSql,
   params: { orgId: string; nodeId: string; actorUserId: string; role: string }
 ): Promise<NodeMemberRecord[]> {
-  const sql = getSql(target);
+  const sql = tenantSql(target, { orgId: params.orgId, userId: params.actorUserId, role: params.role });
   const { orgId, nodeId, actorUserId, role } = params;
 
   const canAccess = await canUserAccessNode(sql, { orgId, nodeId, userId: actorUserId, role });
@@ -893,7 +892,7 @@ export async function addNodeMember(
   target: DbOrSql,
   params: { orgId: string; nodeId: string; targetUserId: string; actorUserId: string; role: string }
 ): Promise<void> {
-  const sql = getSql(target);
+  const sql = tenantSql(target, { orgId: params.orgId, userId: params.actorUserId, role: params.role });
   const { orgId, nodeId, targetUserId, actorUserId, role } = params;
 
   if (role !== 'owner' && role !== 'admin') {
@@ -934,7 +933,7 @@ export async function removeNodeMember(
   target: DbOrSql,
   params: { orgId: string; nodeId: string; targetUserId: string; actorUserId: string; role: string }
 ): Promise<void> {
-  const sql = getSql(target);
+  const sql = tenantSql(target, { orgId: params.orgId, userId: params.actorUserId, role: params.role });
   const { orgId, nodeId, targetUserId, actorUserId, role } = params;
 
   // Actor can remove themselves, or Owners/Admins can remove any member

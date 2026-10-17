@@ -27,15 +27,10 @@ import {
   type MyTasksResponseDTO,
 } from '@workspace/core';
 import { insertOutboxEvent } from './outbox-operations.js';
-import type { DbOrSql } from './node-operations.js';
+import { tenantSql, type DbOrSql, type TenantContext } from './client.js';
 import { markNodesDirty } from './rollup-operations.js';
 
-function getRawSql(db: DbOrSql): any {
-  if (typeof (db as any).unsafe === 'function') {
-    return db;
-  }
-  return (db as any).$client;
-}
+const scoped = (db: DbOrSql, context: TenantContext): any => tenantSql(db, context);
 
 // ---------------------------------------------------------------------------
 // Internal Permission & Validation Helpers
@@ -59,7 +54,7 @@ export async function verifyProjectAccess(
     role: string;
   }
 ): Promise<ProjectAccessContext> {
-  const rawSql = getRawSql(db);
+  const rawSql = scoped(db, { orgId: params.orgId, userId: params.userId, role: params.role });
   const [project] = await rawSql<ProjectAccessContext[]>`
     SELECT id, org_id as "orgId", kind, name, visibility, key_prefix as "keyPrefix"
     FROM nodes
@@ -257,7 +252,7 @@ export async function createTask(
     throw new ForbiddenError('Viewers are not permitted to create tasks');
   }
 
-  const rawSql = getRawSql(db);
+  const rawSql = scoped(db, { orgId: params.orgId, userId: params.actorUserId, role: params.role });
 
   return await rawSql.begin((sql: any) => createTaskInTransaction(sql, params));
 }
@@ -421,7 +416,7 @@ export async function getTaskById(
     includeArchived?: boolean;
   }
 ): Promise<TaskDTO> {
-  const rawSql = getRawSql(db);
+  const rawSql = scoped(db, { orgId: params.orgId, userId: params.userId, role: params.role });
 
   const [row] = await rawSql`
     SELECT 
@@ -521,7 +516,7 @@ export async function listTasks(
     limit?: number;
   }
 ): Promise<TaskDTO[]> {
-  const rawSql = getRawSql(db);
+  const rawSql = scoped(db, { orgId: params.orgId, userId: params.userId, role: params.role });
   const limit = params.limit || 100;
 
   // Build private project access filter for non-owners/admins
@@ -638,7 +633,7 @@ export async function getMyTasks(
     query: MyTasksQuery;
   }
 ): Promise<MyTasksResponseDTO> {
-  const rawSql = getRawSql(db);
+  const rawSql = scoped(db, { orgId: params.orgId, userId: params.userId, role: params.role });
   const isElevated = params.role === 'owner' || params.role === 'admin';
   const today = getKolkataTodayDateString();
   const limit = Math.min(params.query.limit || 50, 100);
@@ -820,7 +815,7 @@ export async function updateTask(
     throw new ForbiddenError('Viewers are not permitted to modify tasks');
   }
 
-  const rawSql = getRawSql(db);
+  const rawSql = scoped(db, { orgId: params.orgId, userId: params.actorUserId, role: params.role });
 
   return await rawSql.begin((sql: any) => updateTaskInTransaction(sql, params));
 }
@@ -1022,7 +1017,7 @@ export async function archiveTask(
     throw new ForbiddenError('Viewers are not permitted to archive tasks');
   }
 
-  const rawSql = getRawSql(db);
+  const rawSql = scoped(db, { orgId: params.orgId, userId: params.actorUserId, role: params.role });
 
   return await rawSql.begin(async (sql: any) => {
     const currentTask = await getTaskById(sql, {
@@ -1100,7 +1095,7 @@ export async function moveTask(
     throw new ForbiddenError('Viewers are not permitted to move tasks');
   }
 
-  const rawSql = getRawSql(db);
+  const rawSql = scoped(db, { orgId: params.orgId, userId: params.actorUserId, role: params.role });
 
   return await rawSql.begin(async (sql: any) => {
     // 1. Fetch and lock moved task row for update
@@ -1374,9 +1369,11 @@ export async function rebalanceColumnRanks(
     projectId: string;
     status: TaskStatus;
     parentTaskId?: string | null;
+    userId?: string;
+    role?: string;
   }
 ): Promise<{ rebalancedCount: number; newRanks: string[] }> {
-  const rawSql = getRawSql(db);
+  const rawSql = scoped(db, { orgId: params.orgId, userId: params.userId, role: params.role });
 
   return await rawSql.begin(async (sql: any) => {
     const parentScope = params.parentTaskId || null;
@@ -1439,7 +1436,7 @@ export async function createSubtask(
     input: Omit<CreateTaskInput, 'projectId' | 'parentTaskId'>;
   }
 ): Promise<TaskDTO> {
-  const rawSql = getRawSql(db);
+  const rawSql = scoped(db, { orgId: params.orgId, userId: params.actorUserId, role: params.role });
   const parent = await getTaskById(rawSql, {
     orgId: params.orgId,
     taskId: params.parentTaskId,
@@ -1467,7 +1464,7 @@ export async function listLabels(
   db: DbOrSql,
   params: { orgId: string }
 ): Promise<TaskLabelDTO[]> {
-  const rawSql = getRawSql(db);
+  const rawSql = scoped(db, { orgId: params.orgId });
   return await rawSql<TaskLabelDTO[]>`
     SELECT id, name, color
     FROM labels
@@ -1488,7 +1485,7 @@ export async function createLabel(
     throw new ForbiddenError('Viewers are not permitted to create labels');
   }
 
-  const rawSql = getRawSql(db);
+  const rawSql = scoped(db, { orgId: params.orgId, role: params.role });
   const id = generateUuidV7();
 
   const [label] = await rawSql<TaskLabelDTO[]>`
@@ -1514,7 +1511,7 @@ export async function deleteLabel(
     throw new ForbiddenError('Viewers are not permitted to delete labels');
   }
 
-  const rawSql = getRawSql(db);
+  const rawSql = scoped(db, { orgId: params.orgId, role: params.role });
   await rawSql`
     DELETE FROM labels
     WHERE org_id = ${params.orgId} AND id = ${params.labelId}

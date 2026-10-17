@@ -67,9 +67,10 @@ export async function runMigrations(connectionString: string): Promise<string[]>
 
 // CLI entry point
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const url = process.env['DATABASE_DIRECT_URL'] || process.env['DATABASE_URL'];
+  // Migrations run as the database owner; the runtime logins (workspace_api / workspace_worker) cannot.
+  const url = process.env['DATABASE_MIGRATION_URL'] || process.env['DATABASE_DIRECT_URL'] || process.env['DATABASE_URL'];
   if (!url) {
-    console.error('Error: DATABASE_DIRECT_URL or DATABASE_URL must be set');
+    console.error('Error: DATABASE_MIGRATION_URL (or DATABASE_DIRECT_URL / DATABASE_URL) must be set');
     process.exit(1);
   }
 

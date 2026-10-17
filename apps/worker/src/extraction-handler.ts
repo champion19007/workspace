@@ -13,6 +13,7 @@ import {
   recordAiUsageLedgerEntry,
   createOrFindExtractionRun,
   persistMeetingNotesAndSuggestions,
+  tenantSql,
 } from '@workspace/db';
 import {
   PROMPT_VERSIONS,
@@ -34,12 +35,14 @@ import {
  * 7. Persists meeting notes, staged action items, synchronized doc, and emits outbox events atomically.
  */
 export async function handleMeetingRoutedJob(
-  sql: Sql,
+  db: Sql,
   ports: AppPorts,
   logger: FastifyBaseLogger | Console,
   payload: MeetingRoutedPayload
 ): Promise<boolean> {
   const { orgId, meetingId, nodeId, processingGeneration } = payload;
+  // Background job for one organization: every statement runs as workspace_system under its org context.
+  const sql = tenantSql(db, { orgId, system: true });
   const startTime = Date.now();
 
   logger.info({ orgId, meetingId, nodeId }, 'Starting meeting notes & action suggestion extraction');

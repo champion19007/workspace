@@ -19,7 +19,7 @@ import {
   type TaskDTO,
   type UpdateTaskInput,
 } from '@workspace/core';
-import { withTenantContext } from './client.js';
+import { tenantSql, withTenantContext } from './client.js';
 import { authorizeMeetingAccess } from './meeting-intake-operations.js';
 import { insertOutboxEvent } from './outbox-operations.js';
 import {
@@ -183,11 +183,12 @@ async function loadActionItem(sql: any, viewer: ActionItemViewer, orgId: string,
 
 /** Action items of one meeting (meeting notes drawer). Caller must have authorized the meeting. */
 export async function listMeetingActionItems(
-  sql: any,
+  db: any,
   orgId: string,
   meetingId: string,
   viewer: ActionItemViewer = { userId: null, role: null }
 ): Promise<ActionItemDTO[]> {
+  const sql: any = tenantSql(db, { orgId, userId: viewer.userId ?? undefined, role: viewer.role ?? undefined });
   const rows = await sql`
     ${selectActionItems(sql, viewer, sql`ai.org_id = ${orgId} AND ai.meeting_id = ${meetingId}`)}
     ORDER BY ai.created_at ASC, ai.id ASC
@@ -202,10 +203,11 @@ export async function listMeetingActionItems(
  * so a 403 never confirms that an item the caller cannot read exists.
  */
 export async function authorizeActionItemAccess(
-  sql: Sql,
+  db: Sql,
   params: { orgId: string; actionItemId: string; userId: string; role: OrgRole; action: 'read' | 'decide' }
 ): Promise<{ meetingId: string }> {
   if (!UUID_RE.test(params.actionItemId)) throw new NotFoundError('Action item not found');
+  const sql = tenantSql(db, { orgId: params.orgId, userId: params.userId, role: params.role });
   const [item] = await sql<Array<{ meeting_id: string }>>`
     SELECT meeting_id FROM action_items WHERE org_id = ${params.orgId} AND id = ${params.actionItemId}
   `;
@@ -226,9 +228,10 @@ export async function authorizeActionItemAccess(
 }
 
 export async function getActionItemForUser(
-  sql: Sql,
+  db: Sql,
   params: { orgId: string; actionItemId: string; userId: string; role: OrgRole; action?: 'read' | 'decide' }
 ): Promise<ActionItemDTO> {
+  const sql = tenantSql(db, { orgId: params.orgId, userId: params.userId, role: params.role });
   await authorizeActionItemAccess(sql, { ...params, action: params.action ?? 'read' });
   return loadActionItem(sql, { userId: params.userId, role: params.role }, params.orgId, params.actionItemId);
 }
@@ -238,11 +241,11 @@ export async function getActionItemForUser(
  * Invalid-evidence items are excluded unless validation='invalid' is requested explicitly.
  */
 export async function listActionItemsForReview(
-  sql: Sql,
+  db: Sql,
   params: { orgId: string; userId: string; role: OrgRole; query: ListActionItemsQuery }
 ): Promise<{ items: ActionItemDTO[]; pageInfo: PageInfo }> {
   const { orgId, userId, role, query } = params;
-  const s = sql as any;
+  const s = tenantSql(db, { orgId, userId, role }) as any;
   const viewer: ActionItemViewer = { userId, role };
 
   let cursor: { id: string; val: string } | null = null;

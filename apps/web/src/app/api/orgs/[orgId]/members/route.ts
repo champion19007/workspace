@@ -24,7 +24,7 @@ export async function GET(
 
   try {
     const tenant = await resolveTenantForUser(db, orgIdentifier, session.userId);
-    const members = await getOrganizationMembers(db, tenant.orgId);
+    const members = await getOrganizationMembers(db, tenant.orgId, session.userId);
 
     return NextResponse.json({
       members: members.map((m) => ({

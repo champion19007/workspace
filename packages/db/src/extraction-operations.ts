@@ -15,7 +15,7 @@ import {
   type RankedAlternativeDTO,
   type LLMPort,
 } from '@workspace/core';
-import type { DbOrSql } from './node-operations.js';
+import { tenantSql, type DbOrSql } from './client.js';
 import { insertOutboxEvent } from './outbox-operations.js';
 import { listMeetingActionItems, type ActionItemViewer } from './approval-operations.js';
 import {
@@ -39,11 +39,9 @@ import type {
   EvidenceSegment,
 } from '@workspace/prompts';
 
-function getSql(target: DbOrSql): postgres.Sql {
-  if (target && typeof target === 'object' && '$client' in target) {
-    return (target as any).$client as postgres.Sql;
-  }
-  return target as postgres.Sql;
+/** Extraction and enrichment run in the worker on behalf of the organization (workspace_system). */
+function systemSql(db: DbOrSql, orgId: string): postgres.Sql {
+  return tenantSql(db, { orgId, system: true });
 }
 
 export interface TranscriptSegmentItem {
@@ -470,7 +468,7 @@ export async function checkBudgetCapacity(
   orgId: string,
   estimatedCostInr: number
 ): Promise<{ permitted: boolean; budgetInr: number; usedInr: number; remainingInr: number }> {
-  const sql = getSql(db);
+  const sql = systemSql(db, orgId);
 
   // 1. Fetch organization budget limit (default 5,000 INR if not set)
   const [org] = await sql`
@@ -535,7 +533,7 @@ export async function recordAiUsageLedgerEntry(
     errorMessage?: string | null;
   }
 ): Promise<void> {
-  const sql = getSql(db);
+  const sql = systemSql(db, entry.orgId);
   const id = generateUuidV7();
 
   await sql`
@@ -620,7 +618,7 @@ export async function createOrFindExtractionRun(
     totalWindows: number;
   }
 ): Promise<{ run: ExtractionRunDTO; isExistingCompleted: boolean }> {
-  const sql = getSql(db);
+  const sql = systemSql(db, params.orgId);
   const runKey = generateExtractionRunKey(params);
 
   const [existing] = await sql<any[]>`
@@ -804,7 +802,7 @@ export async function persistMeetingNotesAndSuggestions(
   db: DbOrSql,
   params: PersistMeetingNotesParams
 ): Promise<PersistMeetingNotesResult> {
-  const sql = getSql(db);
+  const sql = systemSql(db, params.orgId);
 
   return await sql.begin(async (txn: any) => {
     // 1. Lock and verify meeting record
@@ -1141,7 +1139,7 @@ export async function revalidateMeetingActionItems(
   orgId: string,
   meetingId: string
 ): Promise<{ validCount: number; invalidCount: number }> {
-  const sql = getSql(db);
+  const sql = systemSql(db, orgId);
 
   // 1. Fetch all transcript segments for the meeting
   const segmentRows = await sql<Array<{ seq: number; text: string; start_ms: number; end_ms: number }>>`
@@ -1212,7 +1210,7 @@ export async function getMeetingNotesAndSuggestions(
   meetingId: string,
   viewer?: ActionItemViewer
 ): Promise<{ notes: MeetingNotesDTO | null; actionItems: ActionItemDTO[] }> {
-  const sql = getSql(db);
+  const sql = tenantSql(db, { orgId, userId: viewer?.userId ?? undefined, role: viewer?.role ?? undefined });
 
   const [notesRow] = await sql<any[]>`
     SELECT *
@@ -1272,7 +1270,7 @@ export async function enrichMeetingSuggestions(
   db: DbOrSql,
   params: EnrichMeetingSuggestionsParams
 ): Promise<EnrichMeetingSuggestionsResult> {
-  const sql = getSql(db);
+  const sql = systemSql(db, params.orgId);
   const { orgId, meetingId, embeddingSpace = DEFAULT_EMBEDDING_SPACE, llmPort } = params;
 
   // 1. Revalidate undecided action items against transcript segments

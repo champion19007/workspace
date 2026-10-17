@@ -59,6 +59,7 @@ export async function GET(
     const speakers = await getMeetingSpeakers(sql, {
       orgId: tenant.orgId,
       meetingId,
+      actorUserId: session.userId,
     });
 
     return NextResponse.json({

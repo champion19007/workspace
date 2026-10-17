@@ -15,6 +15,7 @@ import {
 } from '@workspace/core';
 import { getOrRefreshZoomCredentials } from './zoom-operations.js';
 import { getMeetingById } from './transcript-operations.js';
+import { loginSql, tenantSql } from './client.js';
 
 interface RawMeetingRow {
   id: string;
@@ -122,7 +123,7 @@ function mapMeeting(row: RawMeetingRow): MeetingDTO {
  * Enforces end-to-end idempotency, state regression protection, and zero credential leakage.
  */
 export async function processZoomWebhookEvent(
-  sql: Sql,
+  db: Sql,
   secretStore: SecretStorePort,
   params: {
     event: string;
@@ -144,98 +145,28 @@ export async function processZoomWebhookEvent(
     return { received: true, status: 'ignored_missing_account_id' };
   }
 
-  // 1. Handle app_deauthorized event
+  // 1. Handle app_deauthorized event. The account is resolved across organizations, so the whole state change
+  //    (receipt, disconnect + generation bump, parked meetings, outbox event) runs in sys_zoom_deauthorize.
   if (event === 'app_deauthorized') {
     const deauthTime = payload?.deauthorization_time || new Date(eventTs).toISOString();
     const eventId = `deauth_${accountId}_${eventTs}`;
 
-    // Look up active integration
-    const integrations = await sql<Array<{
-      id: string;
-      org_id: string;
-      secret_arn: string;
-      installed_at: Date;
-      connection_generation: number;
-    }>>`
-      SELECT id, org_id, secret_arn, installed_at, connection_generation
-      FROM integrations
-      WHERE provider = 'zoom'
-        AND account_id = ${accountId}
-        AND status != 'disconnected'
-      LIMIT 1
+    const [result] = await loginSql(db)<Array<{ outcome: string; org_id: string | null; secret_arn: string | null }>>`
+      SELECT * FROM sys_zoom_deauthorize(${accountId}, ${eventId}, ${new Date(eventTs).toISOString()}, ${deauthTime})
     `;
 
-    if (integrations.length === 0) {
-      // Record receipt without creating tenant data
-      await sql`
-        INSERT INTO zoom_webhook_events (account_id, event_type, event_id)
-        VALUES (${accountId}, 'app_deauthorized', ${eventId})
-        ON CONFLICT (account_id, event_type, event_id) DO NOTHING
-      `;
-      return { received: true, status: 'ignored_unmapped_account' };
+    if (result?.outcome !== 'deauthorized') {
+      return { received: true, status: result?.outcome ?? 'ignored_unmapped_account' };
     }
-
-    const current = integrations[0]!;
-
-    // Check if deauth is for an older grant (eventTs < installed_at)
-    if (new Date(current.installed_at).getTime() > eventTs) {
-      return { received: true, status: 'ignored_stale_deauthorization' };
-    }
-
-    // Execute deauthorization cleanup in one database transaction
-    await sql.begin(async (txn) => {
-      // 1. Record receipt
-      await txn`
-        INSERT INTO zoom_webhook_events (org_id, account_id, event_type, event_id)
-        VALUES (${current.org_id}, ${accountId}, 'app_deauthorized', ${eventId})
-        ON CONFLICT (account_id, event_type, event_id) DO NOTHING
-      `;
-
-      // 2. Mark integration disconnected and bump generation
-      await txn`
-        UPDATE integrations
-        SET status = 'disconnected',
-            connection_generation = connection_generation + 1,
-            last_error_category = 'deauthorized',
-            last_error_message = 'Zoom application was uninstalled/deauthorized by customer',
-            updated_at = now()
-        WHERE id = ${current.id}
-      `;
-
-      // 3. Transition pending meetings to connection_requires_reconnection
-      await txn`
-        UPDATE meetings
-        SET status = 'connection_requires_reconnection',
-            intake_error = 'Zoom integration was deauthorized',
-            updated_at = now()
-        WHERE org_id = ${current.org_id}
-          AND status IN ('waiting_for_transcript', 'pending_consent')
-      `;
-
-      // 4. Emit outbox event
-      await txn`
-        INSERT INTO outbox (org_id, topic, payload)
-        VALUES (
-          ${current.org_id},
-          'integration.zoom.deauthorized',
-          ${JSON.stringify({
-            orgId: current.org_id,
-            accountId,
-            deauthorizedAt: deauthTime,
-            connectionGeneration: current.connection_generation + 1,
-          })}::jsonb
-        )
-      `;
-    });
 
     // Invalidate and delete secret from SecretStore immediately
     try {
-      await secretStore.deleteSecret(current.secret_arn);
+      await secretStore.deleteSecret(result.secret_arn!);
     } catch {
       // Best-effort cleanup
     }
 
-    return { received: true, status: 'deauthorized', orgId: current.org_id };
+    return { received: true, status: 'deauthorized', orgId: result.org_id! };
   }
 
   // 2. Handle meeting recording events: recording.completed and recording.transcript_completed
@@ -255,32 +186,27 @@ export async function processZoomWebhookEvent(
     const timezone = obj.timezone ? String(obj.timezone) : null;
     const eventId = `${event}_${meetingUuid}_${eventTs}`;
 
-    // Check active integration for this account
-    const integrations = await sql<Array<{
+    // The organization behind this Zoom account (resolved across organizations)
+    const integrations = await loginSql(db)<Array<{
       id: string;
       org_id: string;
       status: string;
       connection_generation: number;
     }>>`
-      SELECT id, org_id, status, connection_generation
-      FROM integrations
-      WHERE provider = 'zoom'
-        AND account_id = ${accountId}
-        AND status != 'disconnected'
-      LIMIT 1
+      SELECT id, org_id, status, connection_generation FROM sys_zoom_account_integration(${accountId})
     `;
 
     if (integrations.length === 0) {
       // Record intake receipt without exposing account mapping
-      await sql`
-        INSERT INTO zoom_webhook_events (account_id, event_type, event_id, provider_meeting_uuid)
-        VALUES (${accountId}, ${event}, ${eventId}, ${meetingUuid})
-        ON CONFLICT (account_id, event_type, event_id) DO NOTHING
+      await loginSql(db)`
+        SELECT sys_zoom_record_unmapped_event(${accountId}, ${event}, ${eventId}, ${meetingUuid})
       `;
       return { received: true, status: 'ignored_unmapped_account' };
     }
 
     const integration = integrations[0]!;
+    // Intake on behalf of the integration (no acting user); the poller passes its system-scoped client.
+    const sql = tenantSql(db, { orgId: integration.org_id });
 
     // Check host consent
     const hostConsents = await sql<Array<{
@@ -511,6 +437,15 @@ export async function processZoomWebhookEvent(
   return { received: true, status: 'ignored_unsupported_event_type' };
 }
 
+/**
+ * Organizations with a connected Zoom integration, for the fallback poller (sys_zoom_poll_orgs entry point,
+ * worker only). Each organization is then scanned in its own system context by pollZoomRecordingsForOrg.
+ */
+export async function listConnectedZoomOrgs(sql: Sql): Promise<string[]> {
+  const rows = await loginSql(sql)<Array<{ org_id: string }>>`SELECT sys_zoom_poll_orgs() AS org_id`;
+  return rows.map((r) => r.org_id);
+}
+
 export interface PollZoomRecordingsResult {
   scanned: boolean;
   discoveredCount: number;
@@ -524,7 +459,7 @@ export interface PollZoomRecordingsResult {
  * rechecks meetings whose transcripts were pending, and advances checkpoints durably.
  */
 export async function pollZoomRecordingsForOrg(
-  sql: Sql,
+  db: Sql,
   secretStore: SecretStorePort,
   zoomClient: ZoomClientPort,
   params: {
@@ -533,6 +468,7 @@ export async function pollZoomRecordingsForOrg(
   }
 ): Promise<PollZoomRecordingsResult> {
   const { orgId, workerId } = params;
+  const sql = tenantSql(db, { orgId, system: true });
 
   // 1. Transaction-level advisory lock to serialize workers for this organization
   const lockRows = await sql<Array<{ locked: boolean }>>`
@@ -740,7 +676,7 @@ export async function pollZoomRecordingsForOrg(
  * Regular Members can only view meetings where they are the verified host.
  */
 export async function listOrgMeetings(
-  sql: Sql,
+  db: Sql,
   params: {
     orgId: string;
     userId: string;
@@ -752,6 +688,7 @@ export async function listOrgMeetings(
   }
 ): Promise<MeetingDTO[]> {
   const { orgId, userId, role, status, query, limit = 50, offset = 0 } = params;
+  const sql = tenantSql(db, { orgId, userId, role });
 
   // Viewers cannot inspect unrouted meeting intake records
   if (role === 'viewer') {
@@ -900,7 +837,7 @@ export async function listOrgMeetings(
  * Re-evaluates meeting intake eligibility and retries transition.
  */
 export async function retryMeetingIntake(
-  sql: Sql,
+  db: Sql,
   params: {
     orgId: string;
     meetingId: string;
@@ -909,6 +846,7 @@ export async function retryMeetingIntake(
   }
 ): Promise<MeetingDTO> {
   const { orgId, meetingId, role } = params;
+  const sql = tenantSql(db, { orgId, userId: params.userId, role });
 
   if (role !== 'owner' && role !== 'admin') {
     throw new ForbiddenError('Only organization Owners or Admins can retry meeting intake');
@@ -1027,10 +965,11 @@ export interface AuthorizeMeetingAccessResult {
  * - Viewers may read permitted content ('read'), but cannot decide or mutate proposals ('decide', 'mutate' -> 403).
  */
 export async function authorizeMeetingAccess(
-  sql: Sql,
+  db: Sql,
   params: AuthorizeMeetingAccessParams
 ): Promise<AuthorizeMeetingAccessResult> {
   const { orgId, meetingId, userId, userRole, action } = params;
+  const sql = tenantSql(db, { orgId, userId, role: userRole });
 
   const meeting = await getMeetingById(sql, orgId, meetingId);
   if (!meeting) {

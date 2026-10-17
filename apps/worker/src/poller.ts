@@ -1,5 +1,5 @@
 import type { AppPorts } from '@workspace/core';
-import { pollZoomRecordingsForOrg, type PollZoomRecordingsResult, type Sql } from '@workspace/db';
+import { listConnectedZoomOrgs, pollZoomRecordingsForOrg, type PollZoomRecordingsResult, type Sql } from '@workspace/db';
 import type { FastifyBaseLogger } from 'fastify';
 
 export interface ZoomRecordingPollerOptions {
@@ -52,15 +52,12 @@ export class ZoomRecordingPoller {
     };
 
     try {
-      // Find all connected Zoom integrations
-      const connectedIntegrations = await this.sql<{ org_id: string }[]>`
-        SELECT org_id FROM integrations
-        WHERE provider = 'zoom' AND status = 'connected'
-      `;
+      // Find all organizations with a connected Zoom integration
+      const connectedOrgIds = await listConnectedZoomOrgs(this.sql);
 
-      cycleResult.scannedOrgs = connectedIntegrations.length;
+      cycleResult.scannedOrgs = connectedOrgIds.length;
 
-      for (const { org_id } of connectedIntegrations) {
+      for (const org_id of connectedOrgIds) {
         try {
           const result = await pollZoomRecordingsForOrg(
             this.sql,

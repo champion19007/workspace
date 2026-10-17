@@ -247,7 +247,7 @@ describe('Stage 14 Database Operations: Speaker Resolution & Project Routing', (
       expect(res.mapping['External Contractor']?.userId).toBeNull();
 
       // Verify transcript segments were updated without altering text, seq, or speaker_label
-      const speakers = await getMeetingSpeakers(sql, { orgId, meetingId });
+      const speakers = await getMeetingSpeakers(sql, { orgId, meetingId, actorUserId: ownerId });
       expect(speakers).toHaveLength(3);
       const hostSpeaker = speakers.find((s) => s.speakerLabel === 'Host Owner');
       expect(hostSpeaker?.userId).toBe(ownerId);
@@ -265,7 +265,7 @@ describe('Stage 14 Database Operations: Speaker Resolution & Project Routing', (
         actorId: ownerId,
       });
 
-      const speakers = await getMeetingSpeakers(sql, { orgId, meetingId });
+      const speakers = await getMeetingSpeakers(sql, { orgId, meetingId, actorUserId: ownerId });
       const contractor = speakers.find((s) => s.speakerLabel === 'External Contractor');
       expect(contractor?.userId).toBe(memberId);
       expect(contractor?.resolutionMethod).toBe('manual');

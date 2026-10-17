@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import type { Sql } from 'postgres';
+import { tenantSql } from './client.js';
 import {
   generateUuidV7,
   NotFoundError,
@@ -61,11 +62,13 @@ export interface IndexTaskEmbeddingResult {
  * CRITICAL INVARIANT: This function does NOT mutate tasks table rows or bump task versions.
  */
 export async function indexTaskEmbedding(
-  sql: Sql,
+  db: Sql,
   llmPort: LLMPort,
   params: IndexTaskEmbeddingParams
 ): Promise<IndexTaskEmbeddingResult> {
   const { orgId, taskId, embeddingSpace = DEFAULT_EMBEDDING_SPACE, force = false } = params;
+  // Embeddings are maintained by the worker (workspace_system); nested calls keep their caller's binding.
+  const sql = tenantSql(db, { orgId, system: true });
 
   // 1. Fetch task details
   const [task] = await sql<Array<{
@@ -168,7 +171,7 @@ export async function indexTaskEmbedding(
  * Backfills missing or outdated task embeddings for deduplication searches.
  */
 export async function ensureProjectTaskEmbeddings(
-  sql: Sql,
+  db: Sql,
   llmPort: LLMPort,
   params: {
     orgId: string;
@@ -177,6 +180,7 @@ export async function ensureProjectTaskEmbeddings(
   }
 ): Promise<{ total: number; indexed: number }> {
   const { orgId, nodeId, embeddingSpace = DEFAULT_EMBEDDING_SPACE } = params;
+  const sql = tenantSql(db, { orgId, system: true });
 
   // Open tasks only: todo, in_progress, blocked
   const openTasks = await sql<Array<{
@@ -226,7 +230,7 @@ export interface MatchingTaskCandidate {
  * Includes eligible open subtasks with parent task context.
  */
 export async function findMatchingOpenTasks(
-  sql: any,
+  db: any,
   params: {
     orgId: string;
     nodeId: string;
@@ -248,6 +252,7 @@ export async function findMatchingOpenTasks(
   if (!queryVector || queryVector.length !== 1024) {
     throw new Error('Query vector must have exactly 1024 dimensions');
   }
+  const sql: any = tenantSql(db, { orgId, system: true });
 
   interface SimilarityRow {
     task_id: string;

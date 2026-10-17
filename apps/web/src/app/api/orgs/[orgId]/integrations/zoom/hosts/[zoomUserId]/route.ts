@@ -40,6 +40,7 @@ export async function PATCH(
       consentStatus: parsed.data.consentStatus,
       adminDisabled: parsed.data.adminDisabled,
       role: tenant.role,
+      userId: session.userId,
     });
 
     return NextResponse.json({ host });

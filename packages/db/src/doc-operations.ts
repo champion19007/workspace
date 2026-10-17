@@ -13,17 +13,10 @@ import {
   type UpdateDocInput,
   type ListDocsQuery,
 } from '@workspace/core';
-import type { DatabaseInstance, Sql } from './client.js';
+import { tenantSql, type DbOrSql, type TenantContext } from './client.js';
 import { insertOutboxEvent } from './outbox-operations.js';
 
-type DbOrSql = DatabaseInstance | Sql;
-
-function getRawSql(db: DbOrSql): any {
-  if ('$client' in db) {
-    return (db as any).$client;
-  }
-  return db;
-}
+const scoped = (db: DbOrSql, context: TenantContext): any => tenantSql(db, context);
 
 // ---------------------------------------------------------------------------
 // Node Access Verification (Zero-Leakage 404 for Private Nodes)
@@ -91,7 +84,7 @@ export async function createDoc(
     throw new ForbiddenError('Viewers are not permitted to create documents');
   }
 
-  const rawSql = getRawSql(db);
+  const rawSql = scoped(db, { orgId: params.orgId, userId: params.actorUserId, role: params.role });
 
   return await rawSql.begin(async (sql: any) => {
     // 1. Verify node exists and caller has access
@@ -177,7 +170,7 @@ export async function getDocById(
     includeArchived?: boolean;
   }
 ): Promise<DocDTO> {
-  const sql = getRawSql(db);
+  const sql = scoped(db, { orgId: params.orgId, userId: params.userId, role: params.role });
   const isPrivileged = params.role === 'owner' || params.role === 'admin';
 
   const [row] = await sql`
@@ -257,7 +250,7 @@ export async function listDocs(
     query: ListDocsQuery;
   }
 ): Promise<{ docs: DocListItemDTO[]; nextCursor: string | null }> {
-  const sql = getRawSql(db);
+  const sql = scoped(db, { orgId: params.orgId, userId: params.userId, role: params.role });
   const isPrivileged = params.role === 'owner' || params.role === 'admin';
   const limit = params.query.limit || 50;
 
@@ -364,7 +357,7 @@ export async function updateDoc(
     throw new ForbiddenError('Viewers are not permitted to edit documents');
   }
 
-  const rawSql = getRawSql(db);
+  const rawSql = scoped(db, { orgId: params.orgId, userId: params.actorUserId, role: params.role });
 
   return await rawSql.begin(async (sql: any) => {
     // 1. Fetch and lock document row
@@ -518,7 +511,7 @@ export async function listDocVersions(
     role: string;
   }
 ): Promise<DocVersionDTO[]> {
-  const sql = getRawSql(db);
+  const sql = scoped(db, { orgId: params.orgId, userId: params.userId, role: params.role });
 
   // Verify access to parent document first (404 on private node if unauthorized)
   await getDocById(sql, {
@@ -571,7 +564,7 @@ export async function getDocVersion(
     role: string;
   }
 ): Promise<DocVersionDTO> {
-  const sql = getRawSql(db);
+  const sql = scoped(db, { orgId: params.orgId, userId: params.userId, role: params.role });
 
   // Verify access to parent document first
   await getDocById(sql, {
@@ -634,7 +627,7 @@ export async function restoreDocVersion(
     throw new ForbiddenError('Viewers are not permitted to restore documents');
   }
 
-  const rawSql = getRawSql(db);
+  const rawSql = scoped(db, { orgId: params.orgId, userId: params.actorUserId, role: params.role });
 
   return await rawSql.begin(async (sql: any) => {
     // 1. Fetch and lock current document row
@@ -801,7 +794,7 @@ export async function archiveDoc(
     throw new ForbiddenError('Viewers are not permitted to archive documents');
   }
 
-  const rawSql = getRawSql(db);
+  const rawSql = scoped(db, { orgId: params.orgId, userId: params.actorUserId, role: params.role });
 
   return await rawSql.begin(async (sql: any) => {
     // 1. Fetch and lock document
