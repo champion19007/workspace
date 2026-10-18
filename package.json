@@ -10,7 +10,7 @@
     "dev:web": "pnpm --filter @workspace/web run dev",
     "build": "pnpm -r run build",
     "typecheck": "pnpm -r run typecheck",
-    "lint": "eslint .",
+    "lint": "eslint apps packages infra eslint.config.mjs vitest.config.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:contracts": "vitest run --testNamePattern contract",
