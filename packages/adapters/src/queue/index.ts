@@ -70,6 +70,8 @@ export class PgBossQueueAdapter implements QueuePort {
   public readonly provider = 'pgboss';
   private boss: PgBoss | null = null;
   private isStarted = false;
+  // pg-boss 10+ only sends to and works queues that exist. create_queue is idempotent; call it once per name.
+  private readonly createdQueues = new Set<string>();
 
   constructor(private readonly config: PgBossConfig) {
     if (!config.databaseUrl) {
@@ -86,9 +88,21 @@ export class PgBossQueueAdapter implements QueuePort {
       this.boss = new PgBoss({
         connectionString: this.config.databaseUrl,
         schema: this.config.schema ?? 'pgboss',
+        // Migration 0015 creates the schema owned by workspace_worker. The worker login has no CREATE on the
+        // database (ADR 17b), and Postgres checks that privilege before IF NOT EXISTS, so pg-boss must not try.
+        createSchema: false,
       });
+      // Without a listener, pg-boss's background errors (e.g. a failed fetch) are unhandled 'error' events
+      // that crash the process. ponytail: console.error; route through the service logger if they need structure.
+      this.boss.on('error', (err) => console.error('[pg-boss]', err));
     }
     return this.boss;
+  }
+
+  private async ensureQueue(boss: PgBoss, job: string): Promise<void> {
+    if (this.createdQueues.has(job)) return;
+    await boss.createQueue(job);
+    this.createdQueues.add(job);
   }
 
   async start(): Promise<void> {
@@ -129,6 +143,7 @@ export class PgBossQueueAdapter implements QueuePort {
       sendOptions.priority = options.priority;
     }
 
+    await this.ensureQueue(boss, job);
     await boss.send(job, validatedData, sendOptions as any);
   }
 
@@ -141,6 +156,7 @@ export class PgBossQueueAdapter implements QueuePort {
       await this.start();
     }
 
+    await this.ensureQueue(boss, job);
     await boss.work(job, async (jobs) => {
       const jobList = Array.isArray(jobs) ? jobs : [jobs];
       for (const j of jobList) {

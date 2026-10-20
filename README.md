@@ -64,7 +64,7 @@ docker exec -i workspace-v1-postgres psql -U workspace_user -d workspace_dev -f 
 ### Step 3: Install Dependencies & Apply Migrations
 ```bash
 pnpm install
-pnpm --filter @workspace/db build
+pnpm --filter "@workspace/db..." build   # db plus the workspace packages it imports
 ```
 Migrations run as the database owner. Set `DATABASE_MIGRATION_URL` from `.env`, then:
 ```bash
