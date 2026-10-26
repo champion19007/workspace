@@ -97,7 +97,7 @@ export function TaskDetailDrawer({
           return res.json();
         })
         .then((data: TaskDTO) => loadForm(data))
-        .catch((err) => setErrorMessage(err.message))
+        .catch((err) => setErrorMessage((err as Error).message))
         .finally(() => setIsLoading(false));
 
       fetch(`/api/orgs/${orgId}/tasks/${taskId}/subtasks`)
@@ -110,10 +110,10 @@ export function TaskDetailDrawer({
         .then((data) => {
           if (data.members) {
             setAvailableMembers(
-              data.members.map((m: any) => ({
-                id: m.userId || m.id,
-                name: m.user?.name || m.name || m.user?.email || m.email,
-                email: m.user?.email || m.email,
+              data.members.map((m: { id: string; name: string | null; email: string }) => ({
+                id: m.id,
+                name: m.name || m.email,
+                email: m.email,
               }))
             );
           }
@@ -187,8 +187,8 @@ export function TaskDetailDrawer({
       setSuccessMessage('Saved');
       onTaskUpdated(data);
       setTimeout(() => setSuccessMessage(null), 2500);
-    } catch (err: any) {
-      setErrorMessage(err.message || "Your changes couldn't be saved.");
+    } catch (err) {
+      setErrorMessage((err as Error).message || "Your changes couldn't be saved.");
     } finally {
       setIsSaving(false);
     }
@@ -221,13 +221,13 @@ export function TaskDetailDrawer({
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || "The task couldn't be archived.");
+        throw new Error((err as Error).message || "The task couldn't be archived.");
       }
 
       if (onTaskArchived) onTaskArchived(task.id);
       onClose();
-    } catch (err: any) {
-      setErrorMessage(err.message || "The task couldn't be archived.");
+    } catch (err) {
+      setErrorMessage((err as Error).message || "The task couldn't be archived.");
     } finally {
       setIsArchiving(false);
     }

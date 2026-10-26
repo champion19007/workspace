@@ -1,9 +1,12 @@
 'use client';
 
 import React, { useState, useEffect, Suspense } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
-import { UserCheck, ArrowRight, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { Link2Off, Loader2, UserPlus } from 'lucide-react';
+import { AuthFrame, AuthFrameFallback } from '@/components/ui/auth-frame';
+import { Avatar } from '@/components/ui/avatar';
+import { Alert } from '@/components/ui/states';
 
 function AcceptInvitationContent() {
   const searchParams = useSearchParams();
@@ -21,12 +24,10 @@ function AcceptInvitationContent() {
         const res = await fetch('/api/auth/session');
         if (res.ok) {
           const data = await res.json();
-          if (data.session) {
-            setCurrentUser({ id: data.session.userId, email: data.session.email });
-          }
+          if (data.authenticated && data.user) setCurrentUser({ id: data.user.id, email: data.user.email });
         }
-      } catch (err) {
-        console.error(err);
+      } catch {
+        // Treated as signed out: the sign-in button below is the way forward either way.
       } finally {
         setSessionLoading(false);
       }
@@ -47,107 +48,89 @@ function AcceptInvitationContent() {
       });
 
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.message || 'Failed to accept invitation');
-      }
+      if (!res.ok) throw new Error(data.message || "This invitation couldn't be accepted.");
 
       router.push(`/orgs/${data.org.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred while accepting');
-    } finally {
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
       setLoading(false);
     }
   };
 
-  if (sessionLoading) {
+  const signOut = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
+    setCurrentUser(null);
+    setError(null);
+  };
+
+  if (!token) {
     return (
-      <div className="min-h-screen bg-canvas text-fg flex items-center justify-center">
-        <div className="w-8 h-8 rounded-full border-2 border-accent border-t-transparent animate-spin" />
-      </div>
+      <AuthFrame
+        icon={Link2Off}
+        tone="warning"
+        title="This invitation link is incomplete"
+        description="Open the link from your invitation email again, or ask the person who invited you to send a new one."
+      >
+        <Link href="/orgs" className="btn btn-secondary w-full">
+          Go to Workspace
+        </Link>
+      </AuthFrame>
     );
   }
 
   const returnUrl = `/invitations/accept?token=${encodeURIComponent(token)}`;
 
   return (
-    <div className="min-h-screen bg-canvas text-fg flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-xl bg-accent-subtle border border-accent/40 text-accent-text mb-6 shadow-md">
-          <UserCheck className="w-8 h-8" />
+    <AuthFrame
+      icon={UserPlus}
+      title="You've been invited"
+      description={
+        currentUser
+          ? 'Accept to join the organization and see its projects, tasks and meeting notes.'
+          : 'Sign in with the email address the invitation was sent to.'
+      }
+    >
+      {sessionLoading ? (
+        <div className="space-y-3" role="status" aria-busy="true">
+          <span className="sr-only">Checking whether you&apos;re signed in…</span>
+          <div className="skeleton h-10 w-full" />
+          <div className="skeleton h-9 w-full" />
         </div>
-        <h1 className="text-2xl font-semibold tracking-tight text-fg">Join Organisation</h1>
-        <p className="mt-2 text-xs text-fg-muted">
-          You have been invited to collaborate in Workspace v1.
-        </p>
-      </div>
-
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-surface border border-border py-8 px-6 shadow-2xl rounded-xl sm:px-10 space-y-6">
-          {error && (
-            <div
-              role="alert"
-              className="p-3.5 rounded-xl bg-danger-subtle border border-danger/20 text-danger text-xs flex items-start gap-2.5"
-            >
-              <AlertCircle className="w-4 h-4 text-danger mt-0.5 shrink-0" />
-              <span>{error}</span>
+      ) : currentUser ? (
+        <>
+          <div className="flex items-center gap-3 rounded-lg bg-surface-2 p-3">
+            <Avatar name={currentUser.email} size="sm" />
+            <div className="min-w-0 text-sm">
+              <p className="text-fg-muted">Signed in as</p>
+              <p className="truncate font-medium text-fg">{currentUser.email}</p>
             </div>
-          )}
+          </div>
 
-          {!token ? (
-            <div className="text-center text-xs text-fg-muted">
-              No invitation token provided. Please check the invitation link.
-            </div>
-          ) : currentUser ? (
-            <div className="space-y-4">
-              <div className="p-3.5 rounded-xl bg-surface-2 border border-border text-xs text-fg-muted">
-                Signed in as: <strong className="text-fg font-mono">{currentUser.email}</strong>
-              </div>
+          {error && <Alert tone="danger">{error}</Alert>}
 
-              <button
-                onClick={handleAccept}
-                disabled={loading}
-                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-accent hover:opacity-90 disabled:opacity-50 text-xs font-semibold text-accent-fg shadow-md transition-opacity"
-              >
-                {loading ? (
-                  <span>Joining organisation...</span>
-                ) : (
-                  <>
-                    <span>Accept Invitation &amp; Join</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-4 text-center">
-              <p className="text-xs text-fg-muted">
-                You must sign in to accept this invitation. Your signed-in email address must match the invitation recipient.
-              </p>
-
-              <Link
-                href={`/auth/login?returnTo=${encodeURIComponent(returnUrl)}`}
-                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-accent hover:opacity-90 text-xs font-semibold text-accent-fg shadow-md transition-opacity"
-              >
-                <span>Sign in to Accept</span>
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+          <button type="button" onClick={handleAccept} disabled={loading} className="btn btn-primary w-full">
+            {loading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+            {loading ? 'Joining…' : 'Accept invitation'}
+          </button>
+          <p className="text-center text-sm text-fg-muted">
+            Invitation for someone else?{' '}
+            <button type="button" onClick={signOut} className="link">
+              Use another account
+            </button>
+          </p>
+        </>
+      ) : (
+        <Link href={`/auth/login?returnTo=${encodeURIComponent(returnUrl)}`} className="btn btn-primary w-full">
+          Sign in to accept
+        </Link>
+      )}
+    </AuthFrame>
   );
 }
 
 export default function AcceptInvitationPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen bg-canvas text-fg flex items-center justify-center">
-          <div className="w-8 h-8 rounded-full border-2 border-accent border-t-transparent animate-spin" />
-        </div>
-      }
-    >
+    <Suspense fallback={<AuthFrameFallback />}>
       <AcceptInvitationContent />
     </Suspense>
   );

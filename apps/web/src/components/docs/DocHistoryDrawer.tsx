@@ -57,7 +57,7 @@ export function DocHistoryDrawer({
         if (isMounted) setVersions(data.versions || []);
       })
       .catch((err) => {
-        if (isMounted) setError(err.message);
+        if (isMounted) setError((err as Error).message);
       })
       .finally(() => {
         if (isMounted) setIsLoading(false);
@@ -74,8 +74,8 @@ export function DocHistoryDrawer({
       const res = await fetch(`/api/orgs/${orgId}/docs/${docId}/versions/${vNum}`);
       if (!res.ok) throw new Error(`Version ${vNum} couldn't be loaded.`);
       setSelectedSnapshot(await res.json());
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError((err as Error).message);
     } finally {
       setIsLoadingSnapshot(false);
     }
@@ -110,8 +110,8 @@ export function DocHistoryDrawer({
       setSelectedSnapshot(null);
       onVersionRestored(restoredDoc);
       onClose();
-    } catch (err: any) {
-      setRestoreError(err.message);
+    } catch (err) {
+      setRestoreError((err as Error).message);
     } finally {
       setIsRestoring(false);
     }

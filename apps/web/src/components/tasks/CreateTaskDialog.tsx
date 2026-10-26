@@ -68,10 +68,10 @@ export function CreateTaskDialog({
         .then((data) => {
           if (data.members) {
             setAvailableMembers(
-              data.members.map((m: any) => ({
-                id: m.userId || m.id,
-                name: m.user?.name || m.name || m.user?.email || m.email,
-                email: m.user?.email || m.email,
+              data.members.map((m: { id: string; name: string | null; email: string }) => ({
+                id: m.id,
+                name: m.name || m.email,
+                email: m.email,
               }))
             );
           }
@@ -105,7 +105,7 @@ export function CreateTaskDialog({
         ? `/api/orgs/${orgId}/tasks/${parentTaskId}/subtasks`
         : `/api/orgs/${orgId}/projects/${targetProjectId}/tasks`;
 
-      const payload: any = {
+      const payload = {
         title: title.trim(),
         description: description.trim() || null,
         status,
@@ -128,8 +128,8 @@ export function CreateTaskDialog({
 
       onTaskCreated(data);
       onClose();
-    } catch (err: any) {
-      setError(err.message || "The task couldn't be created. Try again.");
+    } catch (err) {
+      setError((err as Error).message || "The task couldn't be created. Try again.");
     } finally {
       setIsSubmitting(false);
     }

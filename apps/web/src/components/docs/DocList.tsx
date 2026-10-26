@@ -74,8 +74,8 @@ export function DocList({ orgId, nodeId, isViewer = false, nodes = [] }: DocList
 
       const data = await res.json();
       setDocs(data.docs || []);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError((err as Error).message);
     } finally {
       setIsLoading(false);
     }
@@ -118,8 +118,8 @@ export function DocList({ orgId, nodeId, isViewer = false, nodes = [] }: DocList
       setIsCreateOpen(false);
       setNewTitle('');
       router.push(docHref(created.id));
-    } catch (err: any) {
-      setCreateError(err.message);
+    } catch (err) {
+      setCreateError((err as Error).message);
     } finally {
       setIsSubmitting(false);
     }
@@ -142,8 +142,8 @@ export function DocList({ orgId, nodeId, isViewer = false, nodes = [] }: DocList
 
       setDocs((prev) => prev.filter((d) => d.id !== docToArchive.id));
       setDocToArchive(null);
-    } catch (err: any) {
-      setActionError(err.message);
+    } catch (err) {
+      setActionError((err as Error).message);
       setDocToArchive(null);
     } finally {
       setIsArchiving(false);

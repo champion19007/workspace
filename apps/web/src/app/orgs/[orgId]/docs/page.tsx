@@ -24,7 +24,7 @@ export default function OrgDocsPage() {
       .then((data) => {
         if (data.nodes) {
           const flatNodes: NodeOption[] = [];
-          const traverse = (nodeList: any[]) => {
+          const traverse = (nodeList: Array<NodeOption & { children?: unknown }>) => {
             for (const n of nodeList) {
               flatNodes.push({
                 id: n.id,
@@ -33,7 +33,7 @@ export default function OrgDocsPage() {
                 visibility: n.visibility,
               });
               if (n.children && Array.isArray(n.children)) {
-                traverse(n.children);
+                traverse(n.children as Array<NodeOption & { children?: unknown }>);
               }
             }
           };

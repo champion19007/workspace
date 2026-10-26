@@ -165,9 +165,9 @@ export function DocEditor({
         } else {
           setSaveStatus('saved');
         }
-      } catch (err: any) {
+      } catch (err) {
         setSaveStatus('error');
-        setErrorMessage(err.message || "Couldn't reach the server.");
+        setErrorMessage((err as Error).message || "Couldn't reach the server.");
       } finally {
         inFlightRef.current = false;
       }

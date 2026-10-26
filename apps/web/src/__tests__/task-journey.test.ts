@@ -97,7 +97,7 @@ describe('Web Task UI — Two-Tab Stale-Edit Journey & OCC Resolution', () => {
 
     // Server detects version mismatch: 1 !== 2 -> Returns HTTP 412 Precondition Failed
     let tabBResponseStatus = 200;
-    let tabBResponseBody: any = null;
+    let tabBResponseBody: { code: string; detail: string; currentEntity: TaskDTO } | null = null;
 
     if (tabBRequestedVersion !== serverTask.version) {
       tabBResponseStatus = 412;
@@ -109,14 +109,14 @@ describe('Web Task UI — Two-Tab Stale-Edit Journey & OCC Resolution', () => {
     }
 
     expect(tabBResponseStatus).toBe(412);
-    expect(tabBResponseBody.currentEntity.version).toBe(2);
+    expect(tabBResponseBody?.currentEntity.version).toBe(2);
 
     // --- STEP 3: Tab B handles 412 without losing user's draft ---
     let conflictServerTask: TaskDTO | null = null;
     let tabBErrorMessage: string | null = null;
 
     if (tabBResponseStatus === 412) {
-      conflictServerTask = tabBResponseBody.currentEntity;
+      conflictServerTask = tabBResponseBody!.currentEntity;
       tabBErrorMessage = `Conflict: This task was modified on the server (now version ${conflictServerTask!.version}) while you were editing.`;
     }
 

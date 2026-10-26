@@ -1,10 +1,13 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Plus, ArrowRight } from 'lucide-react';
+import { ChevronRight, Plus } from 'lucide-react';
 import { RoleBadge } from '@/components/ui/badge';
+import { Avatar } from '@/components/ui/avatar';
+import { AuthFrame } from '@/components/ui/auth-frame';
+import { Alert } from '@/components/ui/states';
 
 interface OrgItem {
   orgId: string;
@@ -19,91 +22,92 @@ export default function OrgsPage() {
   const router = useRouter();
   const [orgs, setOrgs] = useState<OrgItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function loadOrgs() {
-      try {
-        const res = await fetch('/api/orgs');
-        if (!res.ok) {
-          if (res.status === 401) {
-            router.push('/auth/login');
-            return;
-          }
-          throw new Error('Failed to load organizations');
-        }
-        const data = await res.json();
-        setOrgs(data.organizations || []);
-        if (data.organizations && data.organizations.length === 0) {
-          router.push('/onboarding');
-        }
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
+  const loadOrgs = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/orgs');
+      if (res.status === 401) {
+        router.push('/auth/login?returnTo=/orgs');
+        return;
       }
+      if (!res.ok) throw new Error("Your organizations couldn't be loaded.");
+      const data = await res.json();
+      const list: OrgItem[] = data.organizations || [];
+      if (list.length === 0) {
+        router.push('/onboarding');
+        return;
+      }
+      setOrgs(list);
+      setLoading(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setLoading(false);
     }
-    loadOrgs();
   }, [router]);
 
+  useEffect(() => {
+    loadOrgs();
+  }, [loadOrgs]);
+
+  if (error) {
+    return (
+      <AuthFrame title="Choose an organization">
+        <Alert
+          tone="danger"
+          title="Couldn't load your organizations"
+          action={
+            <button type="button" onClick={loadOrgs} className="btn btn-secondary btn-sm">
+              Try again
+            </button>
+          }
+        >
+          {error}
+        </Alert>
+      </AuthFrame>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-canvas text-fg flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-xl mx-auto w-full space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-fg">Your Workspaces</h1>
-            <p className="text-xs text-fg-muted mt-1">
-              Select an organization to access projects, tasks, and meeting notes.
-            </p>
-          </div>
-          <Link
-            href="/onboarding"
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accent text-accent-fg font-semibold text-xs shadow-md hover:opacity-90 transition-opacity"
-          >
-            <Plus className="w-4 h-4" />
-            <span>New Workspace</span>
-          </Link>
+    <AuthFrame
+      title="Choose an organization"
+      description="Pick where you want to work."
+      footer={
+        <Link href="/onboarding" className="link inline-flex items-center gap-1">
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          Create a new organization
+        </Link>
+      }
+    >
+      {loading ? (
+        <div className="space-y-2" role="status" aria-busy="true">
+          <span className="sr-only">Loading your organizations…</span>
+          {[0, 1].map((i) => (
+            <div key={i} className="skeleton h-14 w-full" />
+          ))}
         </div>
-
-        {loading ? (
-          <div className="space-y-3">
-            {[1, 2].map((i) => (
-              <div
-                key={i}
-                className="h-20 rounded-xl bg-surface border border-border animate-pulse"
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {orgs.map((org) => (
+      ) : (
+        <ul className="-m-2 space-y-1">
+          {orgs.map((org) => (
+            <li key={org.orgId}>
               <Link
-                key={org.orgId}
                 href={`/orgs/${org.orgId}`}
-                className="group flex items-center justify-between p-4 rounded-xl bg-surface hover:bg-surface-2 border border-border hover:border-accent/40 transition-all shadow-sm"
+                className="group flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-surface-2"
               >
-                <div className="flex items-center gap-3.5">
-                  <div className="w-10 h-10 rounded-xl bg-accent-subtle border border-accent/30 flex items-center justify-center text-accent-text font-semibold">
-                    {org.orgName.charAt(0).toUpperCase()}
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold text-fg group-hover:text-accent-text transition-colors">
-                      {org.orgName}
-                    </div>
-                    <div className="text-xs text-fg-muted font-mono mt-0.5">
-                      app.workspace.dev/{org.orgSlug}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <RoleBadge role={org.role} />
-                  <ArrowRight className="w-4 h-4 text-fg-muted group-hover:text-accent-text group-hover:translate-x-0.5 transition-all" />
-                </div>
+                <Avatar name={org.orgName} size="md" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium text-fg">{org.orgName}</span>
+                  <span className="block truncate font-mono text-xs text-fg-muted">{org.orgSlug}</span>
+                </span>
+                <RoleBadge role={org.role} />
+                <ChevronRight className="h-4 w-4 text-fg-subtle transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
               </Link>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </AuthFrame>
   );
 }
