@@ -33,20 +33,20 @@ function AuthErrorContent() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-surface-2 text-fg flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-min-full sm:max-w-md text-center">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-amber-500/20 border border-amber-500/30 text-amber-400 mb-6">
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-xl bg-warning-subtle border border-warning/30 text-warning mb-6">
           <AlertTriangle className="w-8 h-8" />
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-white">{info.title}</h1>
-        <p className="mt-2 text-sm text-slate-400 max-w-sm mx-auto">{info.desc}</p>
+        <h1 className="text-2xl font-semibold tracking-tight text-fg">{info.title}</h1>
+        <p className="mt-2 text-sm text-fg-muted max-w-sm mx-auto">{info.desc}</p>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-slate-900/80 backdrop-blur-sm border border-slate-800 py-8 px-6 shadow-2xl rounded-2xl sm:px-10 text-center">
+        <div className="bg-surface-2 backdrop-blur-sm border border-border py-8 px-6 shadow-2xl rounded-xl sm:px-10 text-center">
           <Link
             href="/auth/login"
-            className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold text-white transition-colors"
+            className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-lg bg-accent hover:bg-accent-hover text-sm font-semibold text-accent-fg transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>Return to Sign In</span>
@@ -61,8 +61,8 @@ export default function AuthErrorPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">
-          <div className="w-8 h-8 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
+        <div className="min-h-screen bg-surface-2 text-fg flex items-center justify-center">
+          <div className="w-8 h-8 rounded-full border-2 border-accent border-t-transparent animate-spin" />
         </div>
       }
     >

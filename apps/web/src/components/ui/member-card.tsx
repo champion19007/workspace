@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
-import { MoreHorizontal, Trash2, Shield, Mail } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { MoreHorizontal, Trash2, Shield } from 'lucide-react';
 import { RoleBadge, OrgRole } from './badge';
+import { Avatar } from './avatar';
+import { useDismiss } from './use-dismiss';
 
 export interface MemberData {
   id: string;
@@ -30,19 +32,12 @@ export function MemberCard({
 }: MemberCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useDismiss(menuOpen, () => setMenuOpen(false), menuRef);
 
+  const isYou = member.userId === currentUserId;
   const canManage =
-    (currentUserRole === 'owner' || currentUserRole === 'admin') &&
-    member.userId !== currentUserId;
-
-  const initials = member.name
-    ? member.name
-        .split(' ')
-        .map((n) => n[0])
-        .slice(0, 2)
-        .join('')
-        .toUpperCase()
-    : member.email.substring(0, 2).toUpperCase();
+    (currentUserRole === 'owner' || currentUserRole === 'admin') && !isYou && Boolean(onUpdateRole || onRemoveMember);
 
   const handleRoleChange = async (role: OrgRole) => {
     if (!onUpdateRole) return;
@@ -57,7 +52,7 @@ export function MemberCard({
 
   const handleRemove = async () => {
     if (!onRemoveMember) return;
-    if (confirm(`Are you sure you want to remove ${member.name || member.email}?`)) {
+    if (confirm(`Remove ${member.name || member.email} from this organization?`)) {
       setUpdating(true);
       try {
         await onRemoveMember(member.id);
@@ -69,86 +64,61 @@ export function MemberCard({
   };
 
   return (
-    <div className="relative p-4 rounded-xl bg-panel border border-border-subtle hover:border-border-strong transition-all flex items-center justify-between gap-4">
-      {/* User Info */}
-      <div className="flex items-center gap-3.5 min-w-0">
-        <div className="w-10 h-10 rounded-full bg-accent/15 border border-accent/30 flex items-center justify-center font-bold text-xs text-accent shrink-0">
-          {initials}
-        </div>
+    <div className="card flex items-center justify-between gap-3 p-4">
+      <div className="flex min-w-0 items-center gap-3">
+        <Avatar name={member.name || member.email} size="lg" />
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h4 className="text-sm font-semibold text-foreground truncate">
-              {member.name || 'Workspace Member'}
-            </h4>
-            {member.userId === currentUserId && (
-              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-panel-inset text-muted-foreground">
-                You
-              </span>
-            )}
+            <h3 className="truncate text-sm font-medium text-fg">{member.name || member.email.split('@')[0]}</h3>
+            {isYou && <span className="badge badge-neutral h-5 px-1.5">You</span>}
           </div>
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5 truncate">
-            <Mail className="w-3 h-3 shrink-0" />
-            <span className="truncate">{member.email}</span>
-          </div>
+          <p className="truncate text-sm text-fg-muted">{member.email}</p>
         </div>
       </div>
 
-      {/* Role & Actions */}
-      <div className="flex items-center gap-3 shrink-0">
+      <div className="flex shrink-0 items-center gap-2">
         <RoleBadge role={member.role} />
 
         {canManage && (
-          <div className="relative">
+          <div ref={menuRef} className="relative">
             <button
+              type="button"
               onClick={() => setMenuOpen(!menuOpen)}
               disabled={updating}
-              aria-label="Member options"
+              aria-label={`Options for ${member.name || member.email}`}
+              aria-haspopup="menu"
               aria-expanded={menuOpen}
-              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-panel-elevated transition-colors"
+              className="btn btn-ghost btn-icon btn-sm"
             >
-              <MoreHorizontal className="w-4 h-4" />
+              <MoreHorizontal aria-hidden="true" />
             </button>
 
             {menuOpen && (
-              <div
-                className="absolute right-0 top-full mt-1 w-44 rounded-xl bg-panel-elevated border border-border-subtle shadow-xl py-1 z-30 animate-in fade-in zoom-in-95"
-                onMouseLeave={() => setMenuOpen(false)}
-              >
-                <div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                  Change Role
-                </div>
+              <div role="menu" className="menu right-0 top-full mt-1 w-48">
+                <div className="menu-label">Change role</div>
                 {currentUserRole === 'owner' && (
-                  <button
-                    onClick={() => handleRoleChange('admin')}
-                    className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-panel flex items-center gap-2"
-                  >
-                    <Shield className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>Make Admin</span>
+                  <button type="button" role="menuitem" onClick={() => handleRoleChange('admin')} className="menu-item">
+                    <Shield aria-hidden="true" />
+                    Make admin
                   </button>
                 )}
-                <button
-                  onClick={() => handleRoleChange('member')}
-                  className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-panel flex items-center gap-2"
-                >
-                  <Shield className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Make Member</span>
+                <button type="button" role="menuitem" onClick={() => handleRoleChange('member')} className="menu-item">
+                  <Shield aria-hidden="true" />
+                  Make member
                 </button>
-                <button
-                  onClick={() => handleRoleChange('viewer')}
-                  className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-panel flex items-center gap-2"
-                >
-                  <Shield className="w-3.5 h-3.5 text-zinc-400" />
-                  <span>Make Viewer</span>
+                <button type="button" role="menuitem" onClick={() => handleRoleChange('viewer')} className="menu-item">
+                  <Shield aria-hidden="true" />
+                  Make viewer
                 </button>
-
-                <div className="my-1 border-t border-border-subtle" />
-
+                <div className="menu-sep" />
                 <button
+                  type="button"
+                  role="menuitem"
                   onClick={handleRemove}
-                  className="w-full text-left px-3 py-1.5 text-xs text-rose-400 hover:bg-rose-500/10 flex items-center gap-2"
+                  className="menu-item text-danger hover:bg-danger-subtle [&_svg]:text-danger"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Remove Member</span>
+                  <Trash2 aria-hidden="true" />
+                  Remove from organization
                 </button>
               </div>
             )}

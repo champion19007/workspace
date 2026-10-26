@@ -3,168 +3,126 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import {
-  Menu,
-  HelpCircle,
-  Command,
-  Settings,
-  Sparkles,
-  LayoutDashboard,
-  ListTodo,
-  Kanban,
-  FileText,
-  Video,
-} from 'lucide-react';
+import { Menu, Search, Sun, Moon, Keyboard, CircleHelp, ChevronRight } from 'lucide-react';
 import { useShell } from './shell-context';
+import { useTheme } from '../theme-provider';
 
-interface TopBarProps {
-  orgId: string;
-  orgName?: string;
-  projectName?: string;
+const SECTION_LABELS: Record<string, string> = {
+  'my-tasks': 'My tasks',
+  inbox: 'Inbox',
+  projects: 'Projects',
+  tasks: 'All tasks',
+  board: 'Board',
+  docs: 'Docs',
+  meetings: 'Meetings',
+  teams: 'Teams',
+  members: 'People',
+  leadership: 'Insights',
+  settings: 'Settings',
+  profile: 'Profile',
+  chat: 'Ask AI',
+};
+
+interface Crumb {
+  label: string;
+  href?: string;
 }
 
-export function TopBar({ orgId, orgName = 'Organisation', projectName = 'Core Workspace' }: TopBarProps) {
+/** Breadcrumb trail for the current route; project ids resolve to names from the shell's project list. */
+function useCrumbs(): Crumb[] {
   const pathname = usePathname();
-  const {
-    setIsSettingsDrawerOpen,
-    setIsHelpDrawerOpen,
-    setIsShortcutsDialogOpen,
-    setIsMobileSidebarOpen,
-  } = useShell();
+  const { orgId, projects } = useShell();
+  const base = `/orgs/${orgId}`;
+  const parts = pathname.slice(base.length).split('/').filter(Boolean);
 
-  // Determine active project tab
-  const isDashboard =
-    pathname === `/orgs/${orgId}` ||
-    pathname.includes('/dashboard');
-  const isList = pathname.includes('/tasks') && !pathname.includes('/my-tasks');
-  const isBoard = pathname.includes('/board');
-  const isDocs = pathname.includes('/docs');
-  const isMeetings = pathname.includes('/meetings');
+  if (parts.length === 0) return [{ label: 'Home' }];
+  const [section, id] = parts as [string, string | undefined];
+  const sectionLabel = SECTION_LABELS[section] ?? section;
+  if (!id) return [{ label: sectionLabel }];
+
+  if (section === 'projects') {
+    const name = projects?.find((p) => p.id === id)?.name ?? (projects ? 'Project' : '…');
+    return [{ label: 'Projects', href: `${base}/projects` }, { label: name }];
+  }
+  if (section === 'docs') return [{ label: 'Docs', href: `${base}/docs` }, { label: 'Document' }];
+  if (section === 'settings') return [{ label: 'Settings', href: `${base}/settings` }, { label: 'Integrations' }];
+  return [{ label: sectionLabel }];
+}
+
+export function TopBar() {
+  const { setIsHelpDrawerOpen, setIsShortcutsDialogOpen, setIsMobileSidebarOpen, setIsCommandLauncherOpen } = useShell();
+  const { resolvedTheme, setTheme } = useTheme();
+  const crumbs = useCrumbs();
+  const nextTheme = resolvedTheme === 'dark' ? 'light' : 'dark';
 
   return (
-    <header className="sticky top-0 z-30 h-16 bg-panel/80 backdrop-blur-md border-b border-border-subtle px-4 lg:px-6 flex items-center justify-between gap-4">
-      {/* Left: Mobile Toggle & Project Context */}
-      <div className="flex items-center gap-3 min-w-0">
-        <button
-          onClick={() => setIsMobileSidebarOpen(true)}
-          aria-label="Open sidebar menu"
-          className="lg:hidden p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-panel-elevated"
-        >
-          <Menu className="w-5 h-5" />
-        </button>
+    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-canvas/85 px-3 backdrop-blur-md sm:px-6 lg:px-8">
+      <button
+        type="button"
+        onClick={() => setIsMobileSidebarOpen(true)}
+        aria-label="Open navigation"
+        className="btn btn-ghost btn-icon -ml-1 lg:hidden"
+      >
+        <Menu aria-hidden="true" />
+      </button>
 
-        <div className="flex items-center gap-2 text-xs truncate">
-          <span className="font-semibold text-foreground truncate">{orgName}</span>
-          <span className="text-muted-foreground">/</span>
-          <span className="font-medium text-muted-foreground truncate">{projectName}</span>
-        </div>
-      </div>
-
-      {/* Center: Horizontal View Switcher Pills (Matching Screenshots 927 & 928) */}
-      <nav aria-label="Project views" className="hidden sm:flex items-center gap-1 bg-panel-inset p-1 rounded-xl border border-border-subtle">
-        <Link
-          href={`/orgs/${orgId}`}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-            isDashboard
-              ? 'bg-accent text-accent-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground hover:bg-panel-elevated'
-          }`}
-        >
-          <LayoutDashboard className="w-3.5 h-3.5" />
-          <span>Dashboard</span>
-        </Link>
-
-        <Link
-          href={`/orgs/${orgId}/tasks`}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-            isList
-              ? 'bg-accent text-accent-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground hover:bg-panel-elevated'
-          }`}
-        >
-          <ListTodo className="w-3.5 h-3.5" />
-          <span>List</span>
-        </Link>
-
-        <Link
-          href={`/orgs/${orgId}/board`}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-            isBoard
-              ? 'bg-accent text-accent-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground hover:bg-panel-elevated'
-          }`}
-        >
-          <Kanban className="w-3.5 h-3.5" />
-          <span>Board</span>
-        </Link>
-
-        <Link
-          href={`/orgs/${orgId}/docs`}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-            isDocs
-              ? 'bg-accent text-accent-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground hover:bg-panel-elevated'
-          }`}
-        >
-          <FileText className="w-3.5 h-3.5" />
-          <span>Documents</span>
-        </Link>
-
-        <Link
-          href={`/orgs/${orgId}/meetings`}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-            isMeetings
-              ? 'bg-accent text-accent-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground hover:bg-panel-elevated'
-          }`}
-        >
-          <Video className="w-3.5 h-3.5" />
-          <span>Meetings</span>
-        </Link>
+      <nav aria-label="Breadcrumb" className="min-w-0 flex-1">
+        <ol className="flex min-w-0 items-center gap-1 text-sm">
+          {crumbs.map((crumb, i) => {
+            const last = i === crumbs.length - 1;
+            return (
+              <li key={i} className={`flex min-w-0 items-center gap-1 ${last ? '' : 'hidden shrink-0 sm:flex'}`}>
+                {crumb.href && !last ? (
+                  <Link href={crumb.href} className="truncate text-fg-muted transition-colors hover:text-fg">
+                    {crumb.label}
+                  </Link>
+                ) : (
+                  <span aria-current={last ? 'page' : undefined} className={`truncate ${last ? 'font-medium text-fg' : 'text-fg-muted'}`}>
+                    {crumb.label}
+                  </span>
+                )}
+                {!last && <ChevronRight className="h-3.5 w-3.5 shrink-0 text-fg-subtle" aria-hidden="true" />}
+              </li>
+            );
+          })}
+        </ol>
       </nav>
 
-      {/* Right: Utility Actions */}
-      <div className="flex items-center gap-2">
-        {/* Ask AI Pill (Flagged P1) */}
-        <Link
-          href={`/orgs/${orgId}/chat`}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-panel-elevated border border-border-subtle hover:border-accent/50 text-xs font-medium text-foreground transition-all"
-        >
-          <Sparkles className="w-3.5 h-3.5 text-accent" />
-          <span className="hidden md:inline">Ask AI</span>
-          <span className="text-[10px] font-mono font-bold px-1 py-0.2 rounded bg-accent/20 text-accent">
-            P1
-          </span>
-        </Link>
-
-        {/* Keyboard Shortcuts Trigger */}
+      <div className="flex items-center gap-0.5">
         <button
+          type="button"
+          onClick={() => setIsCommandLauncherOpen(true)}
+          aria-label="Search"
+          className="btn btn-ghost btn-icon lg:hidden"
+        >
+          <Search aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          onClick={() => setTheme(nextTheme)}
+          aria-label={`Switch to ${nextTheme} theme`}
+          title={`Switch to ${nextTheme} theme`}
+          className="btn btn-ghost btn-icon"
+        >
+          {resolvedTheme === 'dark' ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
+        </button>
+        <button
+          type="button"
           onClick={() => setIsShortcutsDialogOpen(true)}
-          aria-label="Keyboard Shortcuts"
-          title="Keyboard Shortcuts (Shift+?)"
-          className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-panel-elevated transition-colors"
+          aria-label="Keyboard shortcuts"
+          title="Keyboard shortcuts (Shift+?)"
+          className="btn btn-ghost btn-icon hidden sm:inline-flex"
         >
-          <Command className="w-4 h-4" />
+          <Keyboard aria-hidden="true" />
         </button>
-
-        {/* Help Drawer Trigger */}
         <button
+          type="button"
           onClick={() => setIsHelpDrawerOpen(true)}
-          aria-label="Help and Documentation"
-          title="Help & FAQ"
-          className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-panel-elevated transition-colors"
+          aria-label="Help"
+          title="Help"
+          className="btn btn-ghost btn-icon"
         >
-          <HelpCircle className="w-4 h-4" />
-        </button>
-
-        {/* Settings Drawer Trigger */}
-        <button
-          onClick={() => setIsSettingsDrawerOpen(true)}
-          aria-label="Settings and Preferences"
-          title="Appearance & Settings"
-          className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-panel-elevated transition-colors"
-        >
-          <Settings className="w-4 h-4" />
+          <CircleHelp aria-hidden="true" />
         </button>
       </div>
     </header>

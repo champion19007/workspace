@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useId } from 'react';
 import { Dialog } from '@/components/ui/dialog';
+import { Alert } from '@/components/ui/states';
 import { type TaskDTO, type TaskLabelDTO, type TaskStatus, type TaskPriority } from '@workspace/core';
-import { Calendar, User, Tag, AlertCircle } from 'lucide-react';
 
 interface MemberOption {
   id: string;
@@ -16,6 +16,8 @@ interface CreateTaskDialogProps {
   onClose: () => void;
   orgId: string;
   projectId: string;
+  /** When given, the dialog shows a project picker (used on the cross-project task list). */
+  projects?: { id: string; name: string }[];
   parentTaskId?: string | null;
   parentTaskTitle?: string;
   initialStatus?: TaskStatus;
@@ -27,11 +29,14 @@ export function CreateTaskDialog({
   onClose,
   orgId,
   projectId,
+  projects,
   parentTaskId,
   parentTaskTitle,
   initialStatus = 'todo',
   onTaskCreated,
 }: CreateTaskDialogProps) {
+  const ids = useId();
+  const [targetProjectId, setTargetProjectId] = useState(projectId);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState<TaskStatus>(initialStatus);
@@ -47,6 +52,7 @@ export function CreateTaskDialog({
 
   useEffect(() => {
     if (isOpen) {
+      setTargetProjectId(projectId);
       setTitle('');
       setDescription('');
       setStatus(initialStatus || 'todo');
@@ -82,12 +88,12 @@ export function CreateTaskDialog({
         })
         .catch(() => {});
     }
-  }, [isOpen, orgId]);
+  }, [isOpen, orgId, projectId, initialStatus]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) {
-      setError('Task title is required');
+      setError('Give the task a title.');
       return;
     }
 
@@ -97,7 +103,7 @@ export function CreateTaskDialog({
     try {
       const endpoint = parentTaskId
         ? `/api/orgs/${orgId}/tasks/${parentTaskId}/subtasks`
-        : `/api/orgs/${orgId}/projects/${projectId}/tasks`;
+        : `/api/orgs/${orgId}/projects/${targetProjectId}/tasks`;
 
       const payload: any = {
         title: title.trim(),
@@ -117,13 +123,13 @@ export function CreateTaskDialog({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.detail || data.message || 'Failed to create task');
+        throw new Error(data.detail || data.message || "The task couldn't be created.");
       }
 
       onTaskCreated(data);
       onClose();
     } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred');
+      setError(err.message || "The task couldn't be created. Try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -139,65 +145,90 @@ export function CreateTaskDialog({
     <Dialog
       isOpen={isOpen}
       onClose={onClose}
-      title={parentTaskId ? `Add Subtask to "${parentTaskTitle || 'Parent Task'}"` : 'Create New Task'}
-      description="Create a task with title, assignee, deadline, and labels."
+      title={parentTaskId ? 'New subtask' : 'New task'}
+      description={parentTaskId ? `Under “${parentTaskTitle || 'parent task'}”` : undefined}
       maxWidthClass="max-w-xl"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
-        {error && (
-          <div className="flex items-center gap-2 rounded-lg bg-rose-500/10 border border-rose-500/30 p-3 text-xs text-rose-300">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
+        {error && <Alert>{error}</Alert>}
+
+        {projects && !parentTaskId && (
+          <div>
+            <label htmlFor={`${ids}-project`} className="label">
+              Project
+            </label>
+            <select
+              id={`${ids}-project`}
+              value={targetProjectId}
+              onChange={(e) => setTargetProjectId(e.target.value)}
+              className="field"
+            >
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
           </div>
         )}
 
         <div>
-          <label className="block text-xs font-medium text-slate-300 mb-1">
-            Task Title <span className="text-rose-400">*</span>
+          <label htmlFor={`${ids}-title`} className="label">
+            Title
           </label>
           <input
+            id={`${ids}-title`}
             type="text"
             required
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. Implement user authentication flow"
-            className="w-full rounded-lg bg-[#101319] border border-[#222633] px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-[#d86dfc]"
+            placeholder="What needs to be done?"
+            className="field"
             autoFocus
           />
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-slate-300 mb-1">Description</label>
+          <label htmlFor={`${ids}-description`} className="label">
+            Description <span className="font-normal text-fg-subtle">(optional)</span>
+          </label>
           <textarea
+            id={`${ids}-description`}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Add relevant context, acceptance criteria or links..."
+            placeholder="Context, acceptance criteria or links"
             rows={3}
-            className="w-full rounded-lg bg-[#101319] border border-[#222633] px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-[#d86dfc] resize-y"
+            className="field resize-y"
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1">Status</label>
+            <label htmlFor={`${ids}-status`} className="label">
+              Status
+            </label>
             <select
+              id={`${ids}-status`}
               value={status}
               onChange={(e) => setStatus(e.target.value as TaskStatus)}
-              className="w-full rounded-lg bg-[#101319] border border-[#222633] px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-[#d86dfc]"
+              className="field"
             >
-              <option value="todo">To Do</option>
-              <option value="in_progress">In Progress</option>
+              <option value="todo">To do</option>
+              <option value="in_progress">In progress</option>
               <option value="done">Done</option>
               <option value="blocked">Blocked</option>
             </select>
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1">Priority</label>
+            <label htmlFor={`${ids}-priority`} className="label">
+              Priority
+            </label>
             <select
+              id={`${ids}-priority`}
               value={priority}
               onChange={(e) => setPriority(e.target.value as TaskPriority)}
-              className="w-full rounded-lg bg-[#101319] border border-[#222633] px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-[#d86dfc]"
+              className="field"
             >
               <option value="low">Low</option>
               <option value="medium">Medium</option>
@@ -205,59 +236,50 @@ export function CreateTaskDialog({
               <option value="urgent">Urgent</option>
             </select>
           </div>
-        </div>
 
-        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-300 mb-1">
-              <User className="w-3.5 h-3.5 text-slate-400" />
-              <span>Assignee</span>
+            <label htmlFor={`${ids}-assignee`} className="label">
+              Assignee
             </label>
             <select
+              id={`${ids}-assignee`}
               value={assigneeId}
               onChange={(e) => setAssigneeId(e.target.value)}
-              className="w-full rounded-lg bg-[#101319] border border-[#222633] px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-[#d86dfc]"
+              className="field"
             >
               <option value="">Unassigned</option>
               {availableMembers.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.name} ({m.email})
+                  {m.name}
                 </option>
               ))}
             </select>
           </div>
 
           <div>
-            <label className="flex items-center justify-between text-xs font-medium text-slate-300 mb-1">
-              <span className="flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                <span>Deadline</span>
-              </span>
+            <div className="flex items-center justify-between">
+              <label htmlFor={`${ids}-due`} className="label">
+                Due date
+              </label>
               {dueDate && (
-                <button
-                  type="button"
-                  onClick={() => setDueDate('')}
-                  className="text-[10px] text-rose-400 hover:underline"
-                >
+                <button type="button" onClick={() => setDueDate('')} className="mb-1.5 text-xs font-medium text-accent-text hover:underline">
                   Clear
                 </button>
               )}
-            </label>
+            </div>
             <input
+              id={`${ids}-due`}
               type="date"
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
-              className="w-full rounded-lg bg-[#101319] border border-[#222633] px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-[#d86dfc]"
+              className="field"
             />
           </div>
         </div>
 
         {availableLabels.length > 0 && (
-          <div>
-            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-300 mb-1.5">
-              <Tag className="w-3.5 h-3.5 text-slate-400" />
-              <span>Labels</span>
-            </label>
+          <fieldset>
+            <legend className="label">Labels</legend>
             <div className="flex flex-wrap gap-1.5">
               {availableLabels.map((l) => {
                 const isSelected = selectedLabels.includes(l.id);
@@ -265,36 +287,29 @@ export function CreateTaskDialog({
                   <button
                     key={l.id}
                     type="button"
+                    aria-pressed={isSelected}
                     onClick={() => toggleLabel(l.id)}
-                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs transition-colors border ${
+                    className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors ${
                       isSelected
-                        ? 'bg-slate-700 text-white border-slate-500 font-medium'
-                        : 'bg-[#101319] text-slate-400 border-[#222633] hover:border-slate-600'
+                        ? 'border-accent bg-accent-subtle text-accent-text'
+                        : 'border-border-strong text-fg-muted hover:border-input hover:text-fg'
                     }`}
                   >
-                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: l.color }} />
-                    <span>{l.name}</span>
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: l.color }} aria-hidden="true" />
+                    {l.name}
                   </button>
                 );
               })}
             </div>
-          </div>
+          </fieldset>
         )}
 
-        <div className="flex justify-end gap-2 pt-4 border-t border-[#222633]">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors"
-          >
+        <div className="flex justify-end gap-2 border-t border-border pt-4">
+          <button type="button" onClick={onClose} className="btn btn-ghost">
             Cancel
           </button>
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="px-4 py-2 rounded-lg bg-[#d86dfc] text-[#0d0614] font-semibold text-sm hover:opacity-95 transition-opacity disabled:opacity-50"
-          >
-            {isSubmitting ? 'Creating...' : parentTaskId ? 'Add Subtask' : 'Create Task'}
+          <button type="submit" disabled={isSubmitting} className="btn btn-primary">
+            {isSubmitting ? 'Creating…' : parentTaskId ? 'Create subtask' : 'Create task'}
           </button>
         </div>
       </form>

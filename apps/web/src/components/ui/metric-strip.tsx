@@ -1,8 +1,9 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 
-export type MetricDotColor = 'accent' | 'amber' | 'emerald' | 'indigo' | 'rose';
+export type MetricDotColor = 'accent' | 'amber' | 'emerald' | 'indigo' | 'rose' | 'neutral';
 
 export interface MetricItem {
   id: string;
@@ -11,47 +12,39 @@ export interface MetricItem {
   dotColor: MetricDotColor;
   subtext?: string;
   change?: string;
+  href?: string;
 }
 
 const DOT_COLOR_MAP: Record<MetricDotColor, string> = {
-  accent: 'bg-accent shadow-[0_0_8px_var(--accent,#d86dfc)]',
-  amber: 'bg-amber-400 shadow-[0_0_8px_#fbbf24]',
-  emerald: 'bg-emerald-400 shadow-[0_0_8px_#34d399]',
-  indigo: 'bg-indigo-400 shadow-[0_0_8px_#818cf8]',
-  rose: 'bg-rose-400 shadow-[0_0_8px_#f43f5e]',
+  accent: 'bg-accent',
+  amber: 'bg-warning',
+  emerald: 'bg-success',
+  indigo: 'bg-info',
+  rose: 'bg-danger',
+  neutral: 'bg-fg-subtle',
 };
 
 export function MetricCard({ item }: { item: MetricItem }) {
-  return (
-    <div className="bg-panel border border-border-subtle hover:border-border-strong rounded-xl p-4 transition-all duration-150 flex flex-col justify-between">
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <div className="flex items-center gap-2">
-          <span
-            className={`w-2.5 h-2.5 rounded-full inline-block shrink-0 ${DOT_COLOR_MAP[item.dotColor] || 'bg-slate-400'}`}
-            aria-hidden="true"
-          />
-          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider truncate">
-            {item.label}
-          </span>
-        </div>
-        {item.change && (
-          <span className="text-[11px] font-medium text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">
-            {item.change}
-          </span>
-        )}
-      </div>
-
-      <div className="flex items-baseline justify-between mt-1">
-        <span className="text-2xl font-bold tracking-tight text-foreground font-mono">
-          {item.value}
+  const body = (
+    <>
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-2 text-sm text-fg-muted">
+          <span className={`h-2 w-2 shrink-0 rounded-full ${DOT_COLOR_MAP[item.dotColor]}`} aria-hidden="true" />
+          <span className="truncate">{item.label}</span>
         </span>
-        {item.subtext && (
-          <span className="text-xs text-muted-foreground truncate">
-            {item.subtext}
-          </span>
-        )}
+        {item.change && <span className="badge badge-neutral">{item.change}</span>}
       </div>
-    </div>
+      <div className="mt-2 text-2xl font-semibold tabular-nums tracking-tight text-fg">{item.value}</div>
+      {item.subtext && <p className="mt-0.5 truncate text-xs text-fg-muted">{item.subtext}</p>}
+    </>
+  );
+
+  return item.href ? (
+    <Link href={item.href} className="card block p-4 transition-colors hover:border-border-strong hover:bg-surface-2/50">
+      {body}
+    </Link>
+  ) : (
+    <div className="card p-4">{body}</div>
   );
 }
 
@@ -63,9 +56,7 @@ export function MetricStrip({
   className?: string;
 }) {
   return (
-    <div
-      className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 ${className}`}
-    >
+    <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${className}`}>
       {items.map((item) => (
         <MetricCard key={item.id} item={item} />
       ))}

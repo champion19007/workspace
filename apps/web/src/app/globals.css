@@ -2,51 +2,280 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Design tokens. Colours are "R G B" channels so Tailwind can apply opacity (bg-accent/20).
+ * Light values on :root, dark values on .dark (set before first paint by THEME_INIT_SCRIPT).
+ * Every text token passes WCAG AA (4.5:1) on canvas, surface and surface-2 of its theme,
+ * and --input (control borders) reaches 3:1 against surface.
+ */
 :root {
-  --canvas: #0d0f12;
-  --sidebar: #0b0d10;
-  --panel: #14171e;
-  --panel-elevated: #1a1e27;
-  --panel-inset: #101319;
-  --border-subtle: #222633;
-  --border-strong: #2e3446;
-  --accent: #d86dfc;
-  --accent-foreground: #0d0614;
-  --accent-muted: rgba(216, 109, 252, 0.15);
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --radius: 0.5rem;
+  color-scheme: light;
+  --canvas: 247 248 250;
+  --surface: 255 255 255;
+  --surface-2: 241 243 246;
+  --surface-3: 230 233 238;
+  --border: 226 229 234;
+  --border-strong: 205 210 217;
+  --input: 138 145 158;
+  --fg: 18 21 27;
+  --fg-muted: 74 82 96;
+  --fg-subtle: 100 108 122;
+  --accent: 62 99 221;
+  --accent-hover: 51 88 212;
+  --accent-fg: 255 255 255;
+  --accent-text: 58 91 199;
+  --accent-subtle: 237 242 254;
+  --success: 29 122 78;
+  --success-subtle: 233 246 238;
+  --warning: 154 87 0;
+  --warning-subtle: 255 244 213;
+  --danger: 206 44 49;
+  --danger-subtle: 254 235 236;
+  --danger-solid: 206 44 49;
+  --info: 13 111 196;
+  --info-subtle: 230 244 254;
+  --shadow: 16 20 30;
+  --overlay: 15 17 21;
 }
 
-body {
-  color: var(--text-primary);
-  background-color: var(--canvas);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  overflow-x: hidden;
+.dark {
+  color-scheme: dark;
+  --canvas: 15 17 21;
+  --surface: 22 25 31;
+  --surface-2: 29 33 40;
+  --surface-3: 37 42 51;
+  --border: 39 44 53;
+  --border-strong: 54 60 71;
+  --input: 95 103 117;
+  --fg: 236 238 242;
+  --fg-muted: 165 172 184;
+  --fg-subtle: 141 149 163;
+  --accent: 62 99 221;
+  --accent-hover: 84 114 228;
+  --accent-fg: 255 255 255;
+  --accent-text: 158 177 255;
+  --accent-subtle: 27 36 71;
+  --success: 61 214 140;
+  --success-subtle: 19 45 33;
+  --warning: 255 202 22;
+  --warning-subtle: 48 32 8;
+  --danger: 255 149 146;
+  --danger-subtle: 59 18 25;
+  --danger-solid: 206 44 49;
+  --info: 112 184 255;
+  --info-subtle: 13 40 71;
+  --shadow: 0 0 0;
+  --overlay: 0 0 0;
 }
 
-/* Custom scrollbars matching dark charcoal theme */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    accent-color: rgb(var(--accent));
+  }
+
+  body {
+    font-size: 0.875rem;
+    line-height: 1.5;
+    overflow-x: hidden;
+  }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--accent-text));
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: rgb(var(--accent) / 0.22);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--border-strong)) transparent;
+  }
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
+@layer components {
+  /* Buttons: .btn + one variant (+ optional size). Works on <button> and <a>. */
+  .btn {
+    @apply inline-flex h-9 select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-3.5 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0;
+  }
+  .btn-sm {
+    @apply h-8 gap-1 px-2.5 text-[13px];
+  }
+  .btn-icon {
+    @apply w-9 px-0;
+  }
+  .btn-icon.btn-sm {
+    @apply w-8;
+  }
+  .btn-primary {
+    @apply bg-accent text-accent-fg hover:bg-accent-hover;
+  }
+  .btn-secondary {
+    @apply border border-border-strong bg-surface text-fg shadow-xs hover:bg-surface-2;
+  }
+  .btn-ghost {
+    @apply text-fg-muted hover:bg-surface-2 hover:text-fg;
+  }
+  .btn-danger {
+    @apply bg-danger-solid text-white hover:bg-danger-solid/90;
+  }
+  .btn-danger-soft {
+    @apply bg-danger-subtle text-danger hover:bg-danger/15;
+  }
+
+  /* Form controls. */
+  .field {
+    @apply h-9 w-full min-w-0 rounded-md border border-input bg-surface px-3 text-sm text-fg transition-colors placeholder:text-fg-subtle disabled:cursor-not-allowed disabled:opacity-60;
+  }
+  .field:focus-visible {
+    outline-offset: 0;
+    @apply border-accent;
+  }
+  textarea.field {
+    @apply h-auto py-2 leading-relaxed;
+  }
+  .field-sm {
+    @apply h-8 text-[13px];
+  }
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-fg;
+  }
+  .hint {
+    @apply text-xs text-fg-muted;
+  }
+
+  .card {
+    @apply rounded-xl border border-border bg-surface;
+  }
+
+  /* Badges: .badge + a tone. Always pair colour with an icon or word. */
+  .badge {
+    @apply inline-flex h-[22px] shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 text-xs font-medium [&_svg]:h-3 [&_svg]:w-3 [&_svg]:shrink-0;
+  }
+  .badge-neutral {
+    @apply bg-surface-2 text-fg-muted;
+  }
+  .badge-accent {
+    @apply bg-accent-subtle text-accent-text;
+  }
+  .badge-success {
+    @apply bg-success-subtle text-success;
+  }
+  .badge-warning {
+    @apply bg-warning-subtle text-warning;
+  }
+  .badge-danger {
+    @apply bg-danger-subtle text-danger;
+  }
+  .badge-info {
+    @apply bg-info-subtle text-info;
+  }
+
+  .kbd {
+    @apply inline-flex h-5 items-center rounded border border-border bg-surface-2 px-1.5 font-mono text-[11px] text-fg-muted;
+  }
+
+  .link {
+    @apply font-medium text-accent-text underline-offset-2 hover:underline;
+  }
+
+  .skeleton {
+    @apply animate-pulse rounded-md bg-surface-3;
+  }
+
+  /* Initials avatar; hue comes from --avatar-hue (set inline per person). */
+  .avatar {
+    @apply inline-flex shrink-0 select-none items-center justify-center rounded-full font-semibold;
+    background-color: hsl(var(--avatar-hue) 55% 92%);
+    color: hsl(var(--avatar-hue) 60% 25%);
+  }
+  .dark .avatar {
+    background-color: hsl(var(--avatar-hue) 30% 24%);
+    color: hsl(var(--avatar-hue) 75% 82%);
+  }
+
+  /* Segmented control for filters and scopes: buttons with aria-pressed, or links with aria-current. */
+  .segmented {
+    @apply inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-lg bg-surface-2 p-0.5;
+  }
+  .segmented > * {
+    @apply inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-3 text-[13px] font-medium text-fg-muted transition-colors hover:text-fg;
+  }
+  .segmented > [aria-pressed='true'],
+  .segmented > [aria-current='page'] {
+    @apply bg-surface text-fg shadow-sm;
+  }
+  .dark .segmented > [aria-pressed='true'],
+  .dark .segmented > [aria-current='page'] {
+    @apply bg-surface-3;
+  }
+
+  /* Underlined page tabs (project views, settings sections). */
+  .tabs {
+    @apply flex items-center gap-5 overflow-x-auto border-b border-border;
+  }
+  .tab {
+    @apply -mb-px inline-flex h-10 shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent text-sm font-medium text-fg-muted transition-colors hover:text-fg [&_svg]:h-4 [&_svg]:w-4;
+  }
+  .tab[aria-current='page'],
+  .tab[aria-selected='true'] {
+    @apply border-accent text-fg;
+  }
+
+  /* Dropdown menus. */
+  .menu {
+    @apply absolute z-40 min-w-[11rem] animate-pop-in rounded-lg border border-border bg-surface p-1 shadow-lg;
+  }
+  .menu-item {
+    @apply flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-fg transition-colors hover:bg-surface-2 disabled:opacity-50 [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0 [&_svg]:text-fg-muted;
+  }
+  .menu-label {
+    @apply px-2.5 pb-1 pt-1.5 text-xs font-medium text-fg-subtle;
+  }
+  .menu-sep {
+    @apply my-1 h-px bg-border;
+  }
+
+  /* Sidebar navigation item; the active page gets an accent marker on the sidebar edge. */
+  .nav-item {
+    @apply relative flex h-10 items-center gap-2.5 rounded-md px-2.5 text-sm font-medium text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg lg:h-8 [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0;
+  }
+  .nav-item[aria-current='page'] {
+    @apply bg-surface-2 text-fg;
+  }
+  .nav-item[aria-current='page']::before {
+    content: '';
+    @apply absolute -left-3 bottom-1.5 top-1.5 w-[3px] rounded-r bg-accent;
+  }
+
+  .count {
+    @apply inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-surface-3 px-1.5 text-[11px] font-medium tabular-nums text-fg-muted;
+  }
+
+  /* Data tables: wrap in .card + overflow-x-auto. */
+  .table {
+    @apply w-full border-collapse text-left text-sm;
+  }
+  .table th {
+    @apply whitespace-nowrap border-b border-border bg-surface-2 px-4 py-2.5 text-xs font-medium text-fg-muted;
+  }
+  .table td {
+    @apply border-b border-border px-4 py-3 align-middle;
+  }
+  .table tbody tr:last-child td {
+    @apply border-b-0;
+  }
 }
 
-::-webkit-scrollbar-thumb {
-  background: #222633;
-  border-radius: 9999px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #2e3446;
-}
-
-/* Accessible focus ring using accent */
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

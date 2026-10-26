@@ -1,19 +1,15 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useId } from 'react';
 import Link from 'next/link';
-import {
-  FileText,
-  Plus,
-  Search,
-  Clock,
-  Trash2,
-  FolderGit2,
-  Users,
-  AlertTriangle,
-} from 'lucide-react';
-import { EmptyState } from '@/components/ui/table-shell';
+import { useRouter } from 'next/navigation';
+import { FileText, Plus, Search, Archive, SearchX } from 'lucide-react';
 import type { DocListItemDTO } from '@workspace/core';
+import { Dialog } from '@/components/ui/dialog';
+import { PageHeader } from '@/components/ui/page-header';
+import { Avatar } from '@/components/ui/avatar';
+import { Alert, EmptyState, ErrorState, SkeletonRows } from '@/components/ui/states';
+import { formatRelativeTime } from '@/lib/format';
 
 interface NodeOption {
   id: string;
@@ -24,47 +20,56 @@ interface NodeOption {
 
 interface DocListProps {
   orgId: string;
+  /** Scope to one project/team (inside a project's Docs tab); links then stay inside the project. */
   nodeId?: string;
   isViewer?: boolean;
   nodes?: NodeOption[];
 }
 
 export function DocList({ orgId, nodeId, isViewer = false, nodes = [] }: DocListProps) {
+  const router = useRouter();
+  const ids = useId();
   const [docs, setDocs] = useState<DocListItemDTO[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedNodeFilter, setSelectedNodeFilter] = useState<string>(nodeId || 'all');
 
-  // New Document modal
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState('');
-  const [selectedNodeId, setSelectedNodeId] = useState<string>(nodeId || (nodes[0]?.id || ''));
+  const [selectedNodeId, setSelectedNodeId] = useState<string>(nodeId || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  // Archive modal
   const [docToArchive, setDocToArchive] = useState<DocListItemDTO | null>(null);
   const [isArchiving, setIsArchiving] = useState(false);
+
+  const docHref = (docId: string) => (nodeId ? `/orgs/${orgId}/projects/${nodeId}/docs/${docId}` : `/orgs/${orgId}/docs/${docId}`);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery), 250);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (!selectedNodeId && nodes[0]) setSelectedNodeId(nodes[0].id);
+  }, [nodes, selectedNodeId]);
 
   const fetchDocs = React.useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams();
-      if (nodeId) {
-        params.set('nodeId', nodeId);
-      } else if (selectedNodeFilter !== 'all') {
-        params.set('nodeId', selectedNodeFilter);
-      }
-      if (searchQuery.trim()) {
-        params.set('search', searchQuery.trim());
-      }
+      if (nodeId) params.set('nodeId', nodeId);
+      else if (selectedNodeFilter !== 'all') params.set('nodeId', selectedNodeFilter);
+      if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
 
       const res = await fetch(`/api/orgs/${orgId}/docs?${params.toString()}`);
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.message || 'Failed to load documents');
+        throw new Error(errData.message || "Docs couldn't be loaded.");
       }
 
       const data = await res.json();
@@ -74,16 +79,11 @@ export function DocList({ orgId, nodeId, isViewer = false, nodes = [] }: DocList
     } finally {
       setIsLoading(false);
     }
-  }, [orgId, nodeId, selectedNodeFilter, searchQuery]);
+  }, [orgId, nodeId, selectedNodeFilter, debouncedSearch]);
 
   useEffect(() => {
     fetchDocs();
   }, [fetchDocs]);
-
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    fetchDocs();
-  };
 
   const handleCreateDocument = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,7 +91,7 @@ export function DocList({ orgId, nodeId, isViewer = false, nodes = [] }: DocList
 
     const targetNode = selectedNodeId || nodeId;
     if (!targetNode) {
-      setCreateError('Please select a team or project node for this document.');
+      setCreateError('Choose the project or team this doc belongs to.');
       return;
     }
 
@@ -105,20 +105,19 @@ export function DocList({ orgId, nodeId, isViewer = false, nodes = [] }: DocList
         body: JSON.stringify({
           nodeId: targetNode,
           title: newTitle.trim(),
-          bodyMd: '# ' + newTitle.trim() + '\n\nStart writing...',
+          bodyMd: `# ${newTitle.trim()}\n\n`,
         }),
       });
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.message || 'Failed to create document');
+        throw new Error(errData.message || "The doc couldn't be created.");
       }
 
       const created = await res.json();
       setIsCreateOpen(false);
       setNewTitle('');
-      // Navigate to newly created doc
-      window.location.href = `/orgs/${orgId}/docs/${created.id}`;
+      router.push(docHref(created.id));
     } catch (err: any) {
       setCreateError(err.message);
     } finally {
@@ -133,320 +132,228 @@ export function DocList({ orgId, nodeId, isViewer = false, nodes = [] }: DocList
     try {
       const res = await fetch(`/api/orgs/${orgId}/docs/${docToArchive.id}`, {
         method: 'DELETE',
-        headers: {
-          'If-Match': `"v${docToArchive.version}"`,
-        },
+        headers: { 'If-Match': `"v${docToArchive.version}"` },
       });
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.message || 'Failed to archive document');
+        throw new Error(errData.message || `“${docToArchive.title}” couldn't be archived.`);
       }
 
       setDocs((prev) => prev.filter((d) => d.id !== docToArchive.id));
       setDocToArchive(null);
     } catch (err: any) {
-      alert(err.message || 'Failed to archive document');
+      setActionError(err.message);
+      setDocToArchive(null);
     } finally {
       setIsArchiving(false);
     }
   };
 
+  const newDocButton = !isViewer && (
+    <button type="button" onClick={() => setIsCreateOpen(true)} className={`btn btn-primary ${nodeId ? 'btn-sm' : ''}`}>
+      <Plus aria-hidden="true" />
+      New doc
+    </button>
+  );
+
+  const projects = nodes.filter((n) => n.kind === 'project');
+  const teams = nodes.filter((n) => n.kind === 'team');
+
   return (
-    <div className="space-y-6 animate-in fade-in duration-200">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-xl lg:text-2xl font-bold text-foreground tracking-tight">
-            Documents Library
-          </h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Knowledge base, project specifications, and architectural documentation.
-          </p>
-        </div>
+    <div className="space-y-6">
+      {!nodeId && (
+        <PageHeader title="Docs" description="Specs, plans and meeting notes, written in Markdown with full version history." actions={newDocButton} />
+      )}
 
-        {!isViewer && (
-          <button
-            onClick={() => setIsCreateOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-accent text-accent-foreground font-bold text-xs shadow-md hover:opacity-90 transition-opacity self-start sm:self-auto"
-          >
-            <Plus className="w-4 h-4" />
-            <span>New Document</span>
-          </button>
-        )}
-      </div>
-
-      {/* Filter & Search Bar */}
-      <div className="p-3 rounded-2xl bg-panel border border-border-subtle flex flex-col sm:flex-row items-center gap-3">
-        <form onSubmit={handleSearchSubmit} className="flex-1 w-full flex items-center gap-2 px-3 py-1.5 rounded-xl bg-panel-inset border border-border-subtle text-xs text-foreground">
-          <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search documents by title or keywords..."
-            className="w-full bg-transparent focus:outline-none placeholder:text-muted-foreground text-xs"
-          />
-          <button type="submit" className="text-[11px] font-semibold text-accent hover:underline">
-            Search
-          </button>
-        </form>
-
-        {!nodeId && nodes.length > 0 && (
-          <div className="w-full sm:w-auto shrink-0 flex items-center gap-2">
+      <div className="space-y-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative sm:w-72">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search titles and text"
+              aria-label="Search docs"
+              className="field field-sm pl-9"
+            />
+          </div>
+          {!nodeId && nodes.length > 0 && (
             <select
               value={selectedNodeFilter}
               onChange={(e) => setSelectedNodeFilter(e.target.value)}
-              className="px-3 py-1.5 rounded-xl bg-panel-inset border border-border-subtle text-xs text-foreground focus:outline-none focus:border-accent"
+              aria-label="Project or team"
+              className="field field-sm w-auto"
             >
-              <option value="all">All Teams & Projects</option>
-              {nodes.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {n.kind === 'project' ? '📁 ' : '👥 '}
-                  {n.name}
-                </option>
-              ))}
+              <option value="all">All projects and teams</option>
+              {projects.length > 0 && (
+                <optgroup label="Projects">
+                  {projects.map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {n.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {teams.length > 0 && (
+                <optgroup label="Teams">
+                  {teams.map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {n.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
-          </div>
+          )}
+          {nodeId && <div className="sm:ml-auto">{newDocButton}</div>}
+        </div>
+
+        {actionError && <Alert onDismiss={() => setActionError(null)}>{actionError}</Alert>}
+
+        {isLoading && docs.length === 0 ? (
+          <SkeletonRows rows={5} />
+        ) : error ? (
+          <ErrorState title="Couldn't load docs" message={error} onRetry={fetchDocs} />
+        ) : docs.length === 0 ? (
+          debouncedSearch.trim() ? (
+            <EmptyState
+              icon={SearchX}
+              title="No docs match"
+              description={`Nothing contains “${debouncedSearch.trim()}”. Try another word.`}
+              action={{ label: 'Clear search', onClick: () => setSearchQuery('') }}
+              compact
+            />
+          ) : (
+            <EmptyState
+              icon={FileText}
+              title="No docs yet"
+              description="Write specs, plans or runbooks here. Meeting notes are added automatically once meetings are processed."
+              action={!isViewer ? { label: 'New doc', onClick: () => setIsCreateOpen(true), primary: true } : undefined}
+            />
+          )
+        ) : (
+          <ul className="card divide-y divide-border overflow-hidden">
+            {docs.map((doc) => {
+              const who = doc.updater?.name || 'Someone';
+              return (
+                <li key={doc.id} className="group relative flex items-start gap-3 px-4 py-3.5 transition-colors hover:bg-surface-2/60">
+                  <FileText className="mt-0.5 h-4 w-4 shrink-0 text-fg-subtle" aria-hidden="true" />
+                  <div className="min-w-0 flex-1">
+                    <Link href={docHref(doc.id)} className="font-medium text-fg after:absolute after:inset-0 hover:underline">
+                      {doc.title}
+                    </Link>
+                    {doc.excerpt && <p className="mt-0.5 line-clamp-1 text-sm text-fg-muted">{doc.excerpt}</p>}
+                    <p className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-fg-muted sm:hidden">
+                      {doc.node?.name && !nodeId && <span>{doc.node.name}</span>}
+                      <span>Edited {formatRelativeTime(doc.updatedAt)}</span>
+                    </p>
+                  </div>
+                  {!nodeId && doc.node?.name && (
+                    <span className="hidden w-40 shrink-0 truncate text-sm text-fg-muted md:block">{doc.node.name}</span>
+                  )}
+                  <span className="hidden w-40 shrink-0 items-center justify-end gap-2 text-sm text-fg-muted sm:flex">
+                    <Avatar name={who} size="xs" />
+                    <span className="truncate">{formatRelativeTime(doc.updatedAt)}</span>
+                  </span>
+                  {!isViewer && (
+                    <button
+                      type="button"
+                      onClick={() => setDocToArchive(doc)}
+                      aria-label={`Archive ${doc.title}`}
+                      title="Archive"
+                      className="btn btn-ghost btn-icon btn-sm relative z-10 -my-1 opacity-100 group-hover:opacity-100 md:opacity-0 md:focus-visible:opacity-100"
+                    >
+                      <Archive aria-hidden="true" />
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         )}
       </div>
 
-      {/* Content Area */}
-      {isLoading ? (
-        <div className="py-20 flex flex-col items-center justify-center space-y-3">
-          <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-          <p className="text-xs text-muted-foreground">Loading documents...</p>
-        </div>
-      ) : error ? (
-        <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/30 text-destructive text-xs">
-          {error}
-        </div>
-      ) : docs.length === 0 ? (
-        <EmptyState
-          icon={FileText}
-          title="No documents found"
-          description={
-            searchQuery.trim()
-              ? "No documents match your search query."
-              : "Create your first document to store product specifications, architecture guidelines, and notes."
-          }
-          action={
-            !isViewer
-              ? {
-                  label: '+ New Document',
-                  onClick: () => setIsCreateOpen(true),
-                }
-              : undefined
-          }
-        />
-      ) : (
-        /* Document Cards Grid matching Screenshot 934 */
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {docs.map((doc) => (
-            <div
-              key={doc.id}
-              className="p-5 rounded-2xl bg-panel border border-border-subtle hover:border-accent/40 transition-all flex flex-col justify-between space-y-4 shadow-sm group"
-            >
-              <div className="space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-accent/20 text-accent border border-accent/30 shrink-0">
-                      v{doc.version}
-                    </span>
+      <Dialog
+        isOpen={isCreateOpen}
+        onClose={() => setIsCreateOpen(false)}
+        title="New doc"
+        description="You'll go straight to the editor."
+        maxWidthClass="max-w-md"
+      >
+        <form onSubmit={handleCreateDocument} className="space-y-4">
+          {createError && <Alert>{createError}</Alert>}
+          <div>
+            <label htmlFor={`${ids}-title`} className="label">
+              Title
+            </label>
+            <input
+              id={`${ids}-title`}
+              type="text"
+              required
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              placeholder="e.g. Q1 launch plan"
+              className="field"
+            />
+          </div>
 
-                    {doc.node && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded bg-panel-inset text-muted-foreground border border-border-subtle truncate">
-                        {doc.node.kind === 'project' ? (
-                          <FolderGit2 className="w-2.5 h-2.5 text-accent shrink-0" />
-                        ) : (
-                          <Users className="w-2.5 h-2.5 text-accent shrink-0" />
-                        )}
-                        <span className="truncate">{doc.node.name}</span>
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-1 text-[11px] text-muted-foreground shrink-0">
-                    <Clock className="w-3 h-3" />
-                    <span>{new Date(doc.updatedAt).toLocaleDateString()}</span>
-                  </div>
-                </div>
-
-                <Link
-                  href={`/orgs/${orgId}/docs/${doc.id}`}
-                  className="block group-hover:text-accent transition-colors"
-                >
-                  <h3 className="text-sm font-bold text-foreground leading-snug line-clamp-2">
-                    {doc.title}
-                  </h3>
-                </Link>
-
-                <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed">
-                  {doc.excerpt || 'No excerpt available.'}
-                </p>
-              </div>
-
-              {/* Bottom Card Footer */}
-              <div className="pt-3 border-t border-border-subtle flex items-center justify-between text-xs text-muted-foreground">
-                <div className="flex items-center gap-1.5 truncate pr-2">
-                  <div className="w-5 h-5 rounded-full bg-accent/20 text-accent border border-accent/40 flex items-center justify-center font-bold text-[10px] shrink-0">
-                    {(doc.updater?.name || 'U').charAt(0).toUpperCase()}
-                  </div>
-                  <span className="truncate text-[11px]">
-                    {doc.updater?.name || 'Unknown'}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  <Link
-                    href={`/orgs/${orgId}/docs/${doc.id}`}
-                    className="px-2.5 py-1 rounded-lg bg-panel-inset hover:bg-panel-elevated border border-border-subtle text-foreground text-xs font-semibold transition-colors"
-                  >
-                    Open
-                  </Link>
-
-                  {!isViewer && (
-                    <button
-                      onClick={() => setDocToArchive(doc)}
-                      className="p-1 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-                      title="Archive document"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Create Document Modal */}
-      {isCreateOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="w-full max-w-md rounded-2xl bg-panel border border-border-subtle shadow-2xl p-6 space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-accent/20 border border-accent/40 flex items-center justify-center text-accent">
-                <FileText className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-foreground">Create New Document</h3>
-                <p className="text-xs text-muted-foreground">
-                  Initialize an authoritative Markdown document
-                </p>
-              </div>
-            </div>
-
-            <form onSubmit={handleCreateDocument} className="space-y-4 pt-2">
-              <div>
-                <label className="block text-xs font-semibold text-foreground mb-1.5">
-                  Document Title <span className="text-accent">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  placeholder="e.g. Architecture Decision Log"
-                  className="w-full px-3 py-2 rounded-xl bg-panel-inset border border-border-subtle focus:border-accent focus:outline-none text-xs text-foreground placeholder:text-muted-foreground"
-                />
-              </div>
-
-              {!nodeId && nodes.length > 0 && (
-                <div>
-                  <label className="block text-xs font-semibold text-foreground mb-1.5">
-                    Target Team or Project <span className="text-accent">*</span>
-                  </label>
-                  <select
-                    value={selectedNodeId}
-                    onChange={(e) => setSelectedNodeId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-panel-inset border border-border-subtle focus:border-accent focus:outline-none text-xs text-foreground"
-                  >
-                    {nodes.map((n) => (
+          {!nodeId && nodes.length > 0 && (
+            <div>
+              <label htmlFor={`${ids}-node`} className="label">
+                Belongs to
+              </label>
+              <select id={`${ids}-node`} value={selectedNodeId} onChange={(e) => setSelectedNodeId(e.target.value)} className="field">
+                {projects.length > 0 && (
+                  <optgroup label="Projects">
+                    {projects.map((n) => (
                       <option key={n.id} value={n.id}>
-                        {n.kind === 'project' ? '📁 Project: ' : '👥 Team: '}
                         {n.name}
                       </option>
                     ))}
-                  </select>
-                </div>
-              )}
-
-              {createError && (
-                <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-xs">
-                  {createError}
-                </div>
-              )}
-
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateOpen(false)}
-                  disabled={isSubmitting}
-                  className="px-4 py-2 rounded-xl bg-panel-inset hover:bg-panel-elevated border border-border-subtle text-xs text-muted-foreground hover:text-foreground font-medium transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting || !newTitle.trim()}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-accent text-accent-foreground font-bold text-xs shadow-md hover:opacity-90 transition-opacity disabled:opacity-50"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <div className="w-3.5 h-3.5 border-2 border-accent-foreground border-t-transparent rounded-full animate-spin" />
-                      <span>Creating...</span>
-                    </>
-                  ) : (
-                    <span>Create & Open Editor</span>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Archive Document Confirmation Modal */}
-      {docToArchive && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="w-full max-w-md rounded-2xl bg-panel border border-border-subtle shadow-2xl p-6 space-y-4">
-            <div className="flex items-center gap-3 text-destructive">
-              <div className="w-10 h-10 rounded-xl bg-destructive/20 border border-destructive/40 flex items-center justify-center">
-                <AlertTriangle className="w-5 h-5 text-destructive" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-foreground">Archive Document?</h3>
-                <p className="text-xs text-muted-foreground">Soft-delete from documents directory</p>
-              </div>
+                  </optgroup>
+                )}
+                {teams.length > 0 && (
+                  <optgroup label="Teams">
+                    {teams.map((n) => (
+                      <option key={n.id} value={n.id}>
+                        {n.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
             </div>
+          )}
 
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Are you sure you want to archive <strong className="text-foreground">"{docToArchive.title}"</strong>?
-              This will remove the document from active listings while preserving its version history.
-            </p>
-
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setDocToArchive(null)}
-                disabled={isArchiving}
-                className="px-4 py-2 rounded-xl bg-panel-inset hover:bg-panel-elevated border border-border-subtle text-xs text-muted-foreground hover:text-foreground font-medium transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleArchive}
-                disabled={isArchiving}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-destructive text-white font-bold text-xs shadow-md hover:opacity-90 transition-opacity disabled:opacity-50"
-              >
-                {isArchiving ? <span>Archiving...</span> : <span>Archive Document</span>}
-              </button>
-            </div>
+          <div className="flex justify-end gap-2 border-t border-border pt-4">
+            <button type="button" onClick={() => setIsCreateOpen(false)} disabled={isSubmitting} className="btn btn-ghost">
+              Cancel
+            </button>
+            <button type="submit" disabled={isSubmitting || !newTitle.trim()} className="btn btn-primary">
+              {isSubmitting ? 'Creating…' : 'Create and open'}
+            </button>
           </div>
+        </form>
+      </Dialog>
+
+      <Dialog
+        isOpen={docToArchive !== null}
+        onClose={() => setDocToArchive(null)}
+        title="Archive this doc?"
+        description={docToArchive ? `“${docToArchive.title}” disappears from Docs. Its version history is kept.` : undefined}
+        maxWidthClass="max-w-md"
+      >
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={() => setDocToArchive(null)} disabled={isArchiving} className="btn btn-ghost">
+            Cancel
+          </button>
+          <button type="button" onClick={handleArchive} disabled={isArchiving} className="btn btn-danger">
+            {isArchiving ? 'Archiving…' : 'Archive doc'}
+          </button>
         </div>
-      )}
+      </Dialog>
     </div>
   );
 }

@@ -1,5 +1,8 @@
 import type { Config } from 'tailwindcss';
 
+/** Tokens live in src/app/globals.css as "R G B" channels; this keeps opacity modifiers working. */
+const token = (name: string) => `rgb(var(--${name}) / <alpha-value>)`;
+
 const config: Config = {
   darkMode: ['class'],
   content: [
@@ -8,57 +11,77 @@ const config: Config = {
     './src/app/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
-    extend: {
-      colors: {
-        canvas: 'var(--canvas, #0d0f12)',
-        sidebar: 'var(--sidebar, #0b0d10)',
-        panel: {
-          DEFAULT: 'var(--panel, #14171e)',
-          elevated: 'var(--panel-elevated, #1a1e27)',
-          inset: 'var(--panel-inset, #101319)',
-        },
-        'border-subtle': 'var(--border-subtle, #222633)',
-        'border-strong': 'var(--border-strong, #2e3446)',
-        accent: {
-          DEFAULT: 'var(--accent, #d86dfc)',
-          foreground: 'var(--accent-foreground, #0d0614)',
-          muted: 'var(--accent-muted, rgba(216, 109, 252, 0.15))',
-        },
-        // Standard semantic mapping
-        border: 'var(--border-subtle, #222633)',
-        input: 'var(--border-strong, #2e3446)',
-        ring: 'var(--accent, #d86dfc)',
-        background: 'var(--canvas, #0d0f12)',
-        foreground: 'var(--text-primary, #f8fafc)',
-        primary: {
-          DEFAULT: 'var(--accent, #d86dfc)',
-          foreground: 'var(--accent-foreground, #0d0614)',
-        },
-        muted: {
-          DEFAULT: 'var(--panel-elevated, #1a1e27)',
-          foreground: 'var(--text-secondary, #94a3b8)',
-        },
-        card: {
-          DEFAULT: 'var(--panel, #14171e)',
-          foreground: 'var(--text-primary, #f8fafc)',
-        },
+    // Replaces Tailwind's palette on purpose: only design tokens are available, so a one-off
+    // `text-rose-400` can't creep back in and break the light theme.
+    colors: {
+      transparent: 'transparent',
+      current: 'currentColor',
+      inherit: 'inherit',
+      white: '#ffffff',
+      black: '#000000',
+      canvas: token('canvas'),
+      surface: { DEFAULT: token('surface'), 2: token('surface-2'), 3: token('surface-3') },
+      border: { DEFAULT: token('border'), strong: token('border-strong') },
+      input: token('input'),
+      fg: { DEFAULT: token('fg'), muted: token('fg-muted'), subtle: token('fg-subtle') },
+      accent: {
+        DEFAULT: token('accent'),
+        hover: token('accent-hover'),
+        fg: token('accent-fg'),
+        text: token('accent-text'),
+        subtle: token('accent-subtle'),
       },
+      success: { DEFAULT: token('success'), subtle: token('success-subtle') },
+      warning: { DEFAULT: token('warning'), subtle: token('warning-subtle') },
+      danger: { DEFAULT: token('danger'), subtle: token('danger-subtle'), solid: token('danger-solid') },
+      info: { DEFAULT: token('info'), subtle: token('info-subtle') },
+      overlay: token('overlay'),
+    },
+    extend: {
+      borderColor: { DEFAULT: token('border') },
+      ringColor: { DEFAULT: token('accent-text') },
       borderRadius: {
-        lg: 'var(--radius, 0.5rem)',
-        md: 'calc(var(--radius, 0.5rem) - 2px)',
-        sm: 'calc(var(--radius, 0.5rem) - 4px)',
+        sm: '4px',
+        DEFAULT: '6px',
+        md: '6px',
+        lg: '8px',
+        xl: '10px',
+        '2xl': '12px',
+      },
+      boxShadow: {
+        xs: '0 1px 1px rgb(var(--shadow) / 0.04)',
+        sm: '0 1px 2px rgb(var(--shadow) / 0.06)',
+        DEFAULT: '0 1px 3px rgb(var(--shadow) / 0.08)',
+        md: '0 4px 12px rgb(var(--shadow) / 0.08)',
+        lg: '0 8px 24px rgb(var(--shadow) / 0.12)',
+        xl: '0 16px 40px rgb(var(--shadow) / 0.16)',
+        '2xl': '0 24px 64px rgb(var(--shadow) / 0.24)',
       },
       fontFamily: {
         sans: [
-          'Inter',
+          '"Segoe UI Variable Text"',
+          'ui-sans-serif',
+          'system-ui',
           '-apple-system',
-          'BlinkMacSystemFont',
           '"Segoe UI"',
           'Roboto',
-          'Helvetica',
+          '"Helvetica Neue"',
           'Arial',
           'sans-serif',
         ],
+        mono: ['ui-monospace', '"Cascadia Code"', '"SF Mono"', 'Menlo', 'Consolas', 'monospace'],
+      },
+      keyframes: {
+        'fade-in': { from: { opacity: '0' }, to: { opacity: '1' } },
+        'pop-in': { from: { opacity: '0', transform: 'scale(0.97)' }, to: { opacity: '1', transform: 'none' } },
+        'slide-in-right': { from: { opacity: '0', transform: 'translateX(24px)' }, to: { opacity: '1', transform: 'none' } },
+        'slide-in-left': { from: { opacity: '0', transform: 'translateX(-24px)' }, to: { opacity: '1', transform: 'none' } },
+      },
+      animation: {
+        'fade-in': 'fade-in 150ms ease-out',
+        'pop-in': 'pop-in 150ms ease-out',
+        'slide-in-right': 'slide-in-right 200ms ease-out',
+        'slide-in-left': 'slide-in-left 200ms ease-out',
       },
     },
   },

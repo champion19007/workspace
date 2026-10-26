@@ -46,18 +46,18 @@ export default function OrgsPage() {
   }, [router]);
 
   return (
-    <div className="min-h-screen bg-canvas text-foreground flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-canvas text-fg flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-xl mx-auto w-full space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">Your Workspaces</h1>
-            <p className="text-xs text-muted-foreground mt-1">
+            <h1 className="text-2xl font-semibold tracking-tight text-fg">Your Workspaces</h1>
+            <p className="text-xs text-fg-muted mt-1">
               Select an organization to access projects, tasks, and meeting notes.
             </p>
           </div>
           <Link
             href="/onboarding"
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accent text-accent-foreground font-bold text-xs shadow-md hover:opacity-90 transition-opacity"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accent text-accent-fg font-semibold text-xs shadow-md hover:opacity-90 transition-opacity"
           >
             <Plus className="w-4 h-4" />
             <span>New Workspace</span>
@@ -69,7 +69,7 @@ export default function OrgsPage() {
             {[1, 2].map((i) => (
               <div
                 key={i}
-                className="h-20 rounded-2xl bg-panel border border-border-subtle animate-pulse"
+                className="h-20 rounded-xl bg-surface border border-border animate-pulse"
               />
             ))}
           </div>
@@ -79,17 +79,17 @@ export default function OrgsPage() {
               <Link
                 key={org.orgId}
                 href={`/orgs/${org.orgId}`}
-                className="group flex items-center justify-between p-4 rounded-2xl bg-panel hover:bg-panel-elevated border border-border-subtle hover:border-accent/40 transition-all shadow-sm"
+                className="group flex items-center justify-between p-4 rounded-xl bg-surface hover:bg-surface-2 border border-border hover:border-accent/40 transition-all shadow-sm"
               >
                 <div className="flex items-center gap-3.5">
-                  <div className="w-10 h-10 rounded-xl bg-accent/15 border border-accent/30 flex items-center justify-center text-accent font-bold">
+                  <div className="w-10 h-10 rounded-xl bg-accent-subtle border border-accent/30 flex items-center justify-center text-accent-text font-semibold">
                     {org.orgName.charAt(0).toUpperCase()}
                   </div>
                   <div>
-                    <div className="text-sm font-semibold text-foreground group-hover:text-accent transition-colors">
+                    <div className="text-sm font-semibold text-fg group-hover:text-accent-text transition-colors">
                       {org.orgName}
                     </div>
-                    <div className="text-xs text-muted-foreground font-mono mt-0.5">
+                    <div className="text-xs text-fg-muted font-mono mt-0.5">
                       app.workspace.dev/{org.orgSlug}
                     </div>
                   </div>
@@ -97,7 +97,7 @@ export default function OrgsPage() {
 
                 <div className="flex items-center gap-3">
                   <RoleBadge role={org.role} />
-                  <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-accent group-hover:translate-x-0.5 transition-all" />
+                  <ArrowRight className="w-4 h-4 text-fg-muted group-hover:text-accent-text group-hover:translate-x-0.5 transition-all" />
                 </div>
               </Link>
             ))}

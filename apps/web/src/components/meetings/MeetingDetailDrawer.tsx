@@ -1,33 +1,15 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import {
-  Clock,
-  User,
-  Calendar,
-  AlertTriangle,
-  RotateCw,
-  Copy,
-  Check,
-  ShieldCheck,
-  CheckCircle2,
-  Trash2,
-  Search,
-  Hash,
-  MessageSquare,
-  FolderKanban,
-  Users,
-  Sparkles,
-  ArrowRight,
-  FileText,
-  ListChecks,
-  HelpCircle,
-  ExternalLink,
-  AlertCircle,
-} from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo, useId } from 'react';
+import Link from 'next/link';
+import { RotateCw, Copy, Check, Trash2, Search, Sparkles, Quote, ShieldCheck } from 'lucide-react';
 import { Drawer } from '@/components/ui/drawer';
 import { Dialog } from '@/components/ui/dialog';
+import { Badge, MEETING_STATUS_META, MeetingStatusBadge } from '@/components/ui/badge';
+import { Alert } from '@/components/ui/states';
 import { ActionItemCard } from '@/components/approvals/ActionItemCard';
+import { SafeMarkdownView } from '@/components/docs/SafeMarkdownView';
+import { formatDateTime } from '@/lib/format';
 import type {
   ZoomMeetingDTO,
   NormalizedTranscriptSegment,
@@ -66,6 +48,8 @@ interface OrgMember {
   email: string;
 }
 
+type Tab = 'notes' | 'transcript' | 'details';
+
 function formatMsToTimestamp(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000);
   const hours = Math.floor(totalSeconds / 3600);
@@ -79,6 +63,21 @@ function formatMsToTimestamp(ms: number): string {
   return `${pad(minutes)}:${pad(seconds)}`;
 }
 
+const SPEAKER_METHOD: Record<string, { label: string; tone: 'success' | 'info' | 'accent' }> = {
+  email_verified: { label: 'Matched by email', tone: 'success' },
+  fuzzy_llm: { label: 'Matched by AI', tone: 'info' },
+  manual: { label: 'Set by hand', tone: 'accent' },
+};
+
+function SectionTitle({ children, count }: { children: React.ReactNode; count?: number }) {
+  return (
+    <h3 className="text-sm font-semibold text-fg">
+      {children}
+      {count !== undefined && <span className="ml-1.5 font-normal text-fg-muted">{count}</span>}
+    </h3>
+  );
+}
+
 export function MeetingDetailDrawer({
   meeting,
   isOpen,
@@ -86,6 +85,9 @@ export function MeetingDetailDrawer({
   orgId,
   onMeetingUpdated,
 }: MeetingDetailDrawerProps) {
+  const ids = useId();
+  const [activeTab, setActiveTab] = useState<Tab>('notes');
+
   // Retry state
   const [retrying, setRetrying] = useState(false);
   const [copiedUuid, setCopiedUuid] = useState(false);
@@ -104,7 +106,7 @@ export function MeetingDetailDrawer({
   const [skipping, setSkipping] = useState(false);
   const [skipError, setSkipError] = useState<string | null>(null);
 
-  // Stage 14: Speakers State
+  // Speakers
   const [speakers, setSpeakers] = useState<SpeakerItem[]>([]);
   const [loadingSpeakers, setLoadingSpeakers] = useState(false);
   const [speakersError, setSpeakersError] = useState<string | null>(null);
@@ -112,8 +114,9 @@ export function MeetingDetailDrawer({
   const [editingSpeakerLabel, setEditingSpeakerLabel] = useState<string | null>(null);
   const [selectedUserForEdit, setSelectedUserForEdit] = useState<string>('');
   const [savingSpeakerMapping, setSavingSpeakerMapping] = useState(false);
+  const [speakerSaveError, setSpeakerSaveError] = useState<string | null>(null);
 
-  // Stage 14: Project Routing State
+  // Project routing
   const [candidates, setCandidates] = useState<CandidateProject[]>([]);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
@@ -122,12 +125,12 @@ export function MeetingDetailDrawer({
   const [routingError, setRoutingError] = useState<string | null>(null);
   const [routingSuccess, setRoutingSuccess] = useState<string | null>(null);
 
-  // Stage 14: Guest Consent State
+  // Guest consent
   const [isResolvingGuestConsent, setIsResolvingGuestConsent] = useState(false);
   const [guestConsentNotes, setGuestConsentNotes] = useState('');
   const [guestConsentError, setGuestConsentError] = useState<string | null>(null);
 
-  // Stage 15: AI Notes & Action Suggestions
+  // Notes & suggested action items
   const [notes, setNotes] = useState<MeetingNotesDTO | null>(null);
   const [actionItems, setActionItems] = useState<ActionItemDTO[]>([]);
   const [loadingNotes, setLoadingNotes] = useState(false);
@@ -145,7 +148,7 @@ export function MeetingDetailDrawer({
       }
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message || 'Failed to load notes');
+        throw new Error(data.message || "The notes couldn't be loaded.");
       }
       setNotes(data.notes || null);
       setActionItems(data.actionItems || []);
@@ -156,15 +159,20 @@ export function MeetingDetailDrawer({
     }
   }, [orgId]);
 
+  // Evidence links open the transcript tab and highlight the quoted line.
   const jumpToCue = (seq: number) => {
-    const el = document.getElementById(`seg-${seq}`);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.classList.add('ring-2', 'ring-accent', 'bg-accent/20');
-      setTimeout(() => {
-        el.classList.remove('ring-2', 'ring-accent', 'bg-accent/20');
-      }, 3000);
-    }
+    setTranscriptSearch('');
+    setActiveTab('transcript');
+    setTimeout(() => {
+      const el = document.getElementById(`seg-${seq}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('ring-2', 'ring-accent', 'bg-accent-subtle');
+        setTimeout(() => {
+          el.classList.remove('ring-2', 'ring-accent', 'bg-accent-subtle');
+        }, 3000);
+      }
+    }, 60);
   };
 
   const fetchTranscript = useCallback(async (meetingId: string) => {
@@ -174,7 +182,7 @@ export function MeetingDetailDrawer({
       const res = await fetch(`/api/orgs/${orgId}/meetings/${meetingId}/transcript?limit=200`);
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message || 'Failed to load transcript');
+        throw new Error(data.message || "The transcript couldn't be loaded.");
       }
       setSegments(data.segments || []);
     } catch (err) {
@@ -229,11 +237,18 @@ export function MeetingDetailDrawer({
 
   useEffect(() => {
     if (isOpen && meeting) {
-      if (meeting.status === 'transcript_ready' || meeting.status === 'awaiting_project_choice' || meeting.status === 'routed' || meeting.status === 'completed' || meeting.hasTranscript) {
+      const hasTranscriptStage =
+        meeting.status === 'transcript_ready' ||
+        meeting.status === 'awaiting_project_choice' ||
+        meeting.status === 'routed' ||
+        meeting.status === 'completed' ||
+        meeting.hasTranscript;
+      const hasNotesStage = meeting.status === 'completed' || meeting.status === 'routed' || meeting.hasTranscript;
+      if (hasTranscriptStage) {
         fetchTranscript(meeting.id);
         fetchSpeakers(meeting.id);
       }
-      if (meeting.status === 'completed' || meeting.status === 'routed' || meeting.hasTranscript) {
+      if (hasNotesStage) {
         fetchNotes(meeting.id);
       }
       fetchCandidates(meeting.id);
@@ -242,6 +257,7 @@ export function MeetingDetailDrawer({
       setRoutingReasonInput('');
       setRoutingError(null);
       setRoutingSuccess(null);
+      setActiveTab(hasNotesStage ? 'notes' : hasTranscriptStage ? 'transcript' : 'details');
     } else {
       setSegments([]);
       setSpeakers([]);
@@ -270,14 +286,14 @@ export function MeetingDetailDrawer({
   if (!meeting) return null;
 
   const handleCopyUuid = () => {
-    navigator.clipboard.writeText(meeting.providerMeetingUuid);
+    navigator.clipboard.writeText(meeting.providerMeetingUuid).catch(() => undefined);
     setCopiedUuid(true);
     setTimeout(() => setCopiedUuid(false), 2000);
   };
 
   const handleCopyAnchor = (seg: NormalizedTranscriptSegment) => {
     const anchorUrl = `${window.location.origin}${window.location.pathname}#anchor-${seg.seq}`;
-    navigator.clipboard.writeText(anchorUrl);
+    navigator.clipboard.writeText(anchorUrl).catch(() => undefined);
     setCopiedAnchorSeq(seg.seq);
     setTimeout(() => setCopiedAnchorSeq(null), 2000);
   };
@@ -291,7 +307,7 @@ export function MeetingDetailDrawer({
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message || 'Retry failed');
+        throw new Error(data.message || "The meeting couldn't be checked again.");
       }
       if (data.meeting && onMeetingUpdated) {
         onMeetingUpdated(data.meeting);
@@ -319,12 +335,12 @@ export function MeetingDetailDrawer({
       const data = await res.json();
       if (!res.ok) {
         if (res.status === 412) {
-          throw new Error('Version conflict: The meeting was modified elsewhere. Please refresh and try again.');
+          throw new Error('This meeting changed while you were looking at it. Close the panel, reopen the meeting and try again.');
         }
         if (res.status === 428) {
-          throw new Error('Precondition Required: If-Match header missing.');
+          throw new Error('The request was missing its version check. Reload the page and try again.');
         }
-        throw new Error(data.message || data.detail || 'Failed to skip meeting');
+        throw new Error(data.message || data.detail || "The meeting couldn't be skipped.");
       }
 
       setIsSkipModalOpen(false);
@@ -341,7 +357,7 @@ export function MeetingDetailDrawer({
 
   const handleRouteMeeting = async () => {
     if (!selectedProjectId) {
-      setRoutingError('Please select a target project leaf');
+      setRoutingError('Choose a project first.');
       return;
     }
 
@@ -365,12 +381,12 @@ export function MeetingDetailDrawer({
       const data = await res.json();
       if (!res.ok) {
         if (res.status === 412) {
-          throw new Error('Version conflict: The meeting was modified concurrently. Please refresh.');
+          throw new Error('This meeting changed while you were looking at it. Reopen it and try again.');
         }
-        throw new Error(data.message || 'Failed to route meeting');
+        throw new Error(data.message || "The meeting couldn't be moved to that project.");
       }
 
-      setRoutingSuccess('Meeting routed successfully to project!');
+      setRoutingSuccess(`Moved to ${candidates.find((c) => c.id === selectedProjectId)?.name ?? 'the project'}. Notes will be written there.`);
       if (data.meeting && onMeetingUpdated) {
         onMeetingUpdated(data.meeting);
       }
@@ -384,6 +400,7 @@ export function MeetingDetailDrawer({
   const handleSaveSpeakerMapping = async () => {
     if (!editingSpeakerLabel) return;
     setSavingSpeakerMapping(true);
+    setSpeakerSaveError(null);
     try {
       const res = await fetch(`/api/orgs/${orgId}/meetings/${meeting.id}/speakers`, {
         method: 'POST',
@@ -396,7 +413,7 @@ export function MeetingDetailDrawer({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message || 'Failed to update speaker mapping');
+        throw new Error(data.message || "The speaker couldn't be updated.");
       }
 
       setEditingSpeakerLabel(null);
@@ -406,7 +423,7 @@ export function MeetingDetailDrawer({
         onMeetingUpdated(data.meeting);
       }
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to update speaker mapping');
+      setSpeakerSaveError(err instanceof Error ? err.message : "The speaker couldn't be updated.");
     } finally {
       setSavingSpeakerMapping(false);
     }
@@ -427,7 +444,7 @@ export function MeetingDetailDrawer({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message || 'Failed to resolve guest consent');
+        throw new Error(data.message || "The consent confirmation couldn't be saved.");
       }
 
       if (data.meeting && onMeetingUpdated) {
@@ -440,503 +457,319 @@ export function MeetingDetailDrawer({
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            Notes &amp; Actions Extracted
-          </span>
-        );
-      case 'routed':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            Routed to Project
-          </span>
-        );
-      case 'awaiting_project_choice':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
-            <AlertTriangle className="w-3.5 h-3.5" />
-            Awaiting Project Choice
-          </span>
-        );
-      case 'routing':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/20">
-            <RotateCw className="w-3.5 h-3.5 animate-spin" />
-            Routing Project...
-          </span>
-        );
-      case 'transcript_ready':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            Transcript Ready
-          </span>
-        );
-      case 'ready_for_transcript_retrieval':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/20">
-            <Clock className="w-3.5 h-3.5" />
-            Ready for Retrieval
-          </span>
-        );
-      case 'waiting_for_transcript':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
-            <Clock className="w-3.5 h-3.5" />
-            Waiting for Transcript
-          </span>
-        );
-      case 'pending_consent':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/20">
-            <ShieldCheck className="w-3.5 h-3.5" />
-            Pending Host Consent
-          </span>
-        );
-      case 'skipped':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-zinc-500/10 text-zinc-400 border border-zinc-500/20">
-            <Trash2 className="w-3.5 h-3.5" />
-            Skipped &amp; Purged
-          </span>
-        );
-      case 'connection_requires_reconnection':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-orange-500/10 text-orange-400 border border-orange-500/20">
-            <AlertTriangle className="w-3.5 h-3.5" />
-            Reconnection Required
-          </span>
-        );
-      case 'intake_failed':
-      default:
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">
-            <AlertTriangle className="w-3.5 h-3.5" />
-            Intake Failed
-          </span>
-        );
-    }
-  };
-
-  const getMethodBadge = (method: string | null) => {
-    switch (method) {
-      case 'email_verified':
-        return (
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-            Verified Email
-          </span>
-        );
-      case 'fuzzy_llm':
-        return (
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/20">
-            AI Disambiguated
-          </span>
-        );
-      case 'manual':
-        return (
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/20">
-            Manual Override
-          </span>
-        );
-      default:
-        return (
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-zinc-500/10 text-zinc-400 border border-zinc-500/20">
-            Unresolved
-          </span>
-        );
-    }
-  };
-
   const canRetry =
     meeting.status === 'intake_failed' ||
     meeting.status === 'pending_consent' ||
     meeting.status === 'connection_requires_reconnection';
 
   const canSkip = !meeting.skipped && meeting.status !== 'skipped';
+  const showRouting =
+    meeting.status === 'awaiting_project_choice' || meeting.status === 'routed' || meeting.status === 'transcript_ready';
+  const statusMeta = MEETING_STATUS_META[meeting.status];
+
+  const validItems = actionItems.filter((i) => i.validationStatus !== 'invalid_evidence');
+  const invalidItems = actionItems.filter((i) => i.validationStatus === 'invalid_evidence');
+  const pendingCount = validItems.filter((i) => i.state === 'suggested').length;
+
+  const subtitle = [
+    meeting.actualStartAt ? formatDateTime(meeting.actualStartAt) : null,
+    meeting.durationSeconds ? `${Math.round(meeting.durationSeconds / 60)} min` : null,
+    meeting.zoomHostEmail,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  const tabs: { id: Tab; label: string; count?: number }[] = [
+    { id: 'notes', label: 'Notes', count: pendingCount || undefined },
+    { id: 'transcript', label: 'Transcript', count: segments.length || undefined },
+    { id: 'details', label: 'Details' },
+  ];
 
   return (
     <>
       <Drawer
         isOpen={isOpen}
         onClose={onClose}
-        title={meeting.title || 'Untitled Meeting'}
-        description={`Zoom Meeting ID: ${meeting.providerNumericId || meeting.providerMeetingUuid}`}
+        title={meeting.title || 'Untitled meeting'}
+        description={subtitle || undefined}
         widthClass="max-w-2xl w-full"
       >
-        <div className="space-y-6 text-sm text-foreground">
-          {/* Status Section */}
-          <div className="p-3.5 rounded-lg bg-panel-inset border border-border-subtle flex items-center justify-between">
-            <span className="text-xs text-muted-foreground font-medium">Lifecycle State:</span>
-            {getStatusBadge(meeting.status)}
+        <div className="space-y-5">
+          {/* Where the meeting is in processing, and what (if anything) it needs from you. */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <MeetingStatusBadge status={meeting.status} />
+            {statusMeta && <span className="text-sm text-fg-muted">{statusMeta.hint}</span>}
+            {meeting.nodeId && meeting.nodeTitle && meeting.status !== 'awaiting_project_choice' && (
+              <Link href={`/orgs/${orgId}/projects/${meeting.nodeId}/dashboard`} className="link text-sm">
+                {meeting.nodeTitle}
+              </Link>
+            )}
           </div>
 
-          {/* Error Alert */}
-          {meeting.intakeError && (
-            <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-start gap-2.5">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
-              <div>
-                <div className="font-semibold">Intake Notice / Reason</div>
-                <div className="mt-0.5 text-rose-200/80">{meeting.intakeError}</div>
-              </div>
-            </div>
-          )}
+          {meeting.intakeError && <Alert title="What went wrong">{meeting.intakeError}</Alert>}
 
-          {/* Guest Consent Attestation Banner */}
           {meeting.guestsPresent && meeting.guestConsentStatus !== 'consented' && (
-            <div className="p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs space-y-2">
-              <div className="font-semibold text-amber-400 flex items-center gap-1.5">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                External Guest Consent Required
-              </div>
-              <p className="text-amber-200/80 leading-relaxed">
-                External participants attended this meeting. Confirm that proper recording and transcription notices
-                were given before automated processing continues.
-              </p>
-              <div className="space-y-2 pt-1">
+            <Alert tone="warning" title="Guests were in this meeting">
+              <p>Confirm that everyone was told the meeting was recorded and transcribed. Processing waits until you do.</p>
+              <div className="mt-2.5 flex flex-col gap-2 sm:flex-row">
                 <input
                   type="text"
-                  placeholder="Attestation notes (e.g. Verbal consent confirmed)..."
+                  aria-label="How consent was given (optional)"
+                  placeholder="How was consent given? (optional)"
                   value={guestConsentNotes}
                   onChange={(e) => setGuestConsentNotes(e.target.value)}
-                  className="w-full px-2.5 py-1.5 rounded bg-panel-inset border border-border-subtle text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-accent"
+                  className="field field-sm flex-1"
                 />
-                {guestConsentError && (
-                  <div className="text-rose-400 text-[11px]">{guestConsentError}</div>
-                )}
                 <button
                   type="button"
                   onClick={handleResolveGuestConsent}
                   disabled={isResolvingGuestConsent}
-                  className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-semibold text-xs border border-amber-500/30 flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                  className="btn btn-secondary btn-sm"
                 >
-                  {isResolvingGuestConsent && <RotateCw className="w-3 h-3 animate-spin" />}
-                  Confirm Guest Consent Provided
+                  <ShieldCheck aria-hidden="true" />
+                  {isResolvingGuestConsent ? 'Saving…' : 'Guests consented'}
                 </button>
               </div>
-            </div>
+              {guestConsentError && <p className="mt-2 text-danger">{guestConsentError}</p>}
+            </Alert>
           )}
 
-          {/* Stage 15: AI Notes & Action Suggestions */}
-          {(notes || loadingNotes || actionItems.length > 0) && (
-            <div className="p-4 rounded-xl bg-panel-inset border border-border-subtle space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-accent" />
-                  Meeting Notes &amp; Action Suggestions
-                </h3>
-                {notes && (
-                  <span className="text-[10px] font-mono text-muted-foreground bg-panel px-2 py-0.5 rounded border border-border-subtle">
-                    Model: {notes.model} (v{notes.promptVersion})
-                  </span>
-                )}
-              </div>
-
-              {loadingNotes ? (
-                <div className="p-4 text-center text-xs text-muted-foreground bg-panel rounded-lg flex items-center justify-center gap-2">
-                  <RotateCw className="w-3.5 h-3.5 animate-spin text-accent" />
-                  Loading meeting notes &amp; suggestions...
-                </div>
-              ) : notesError ? (
-                <div className="p-2.5 text-xs text-rose-400 bg-rose-500/10 rounded-lg">
-                  {notesError}
-                </div>
-              ) : (
-                <>
-                  {/* Executive Summary */}
-                  {notes?.summaryMd && (
-                    <div className="space-y-1.5">
-                      <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                        <FileText className="w-3 h-3 text-accent" />
-                        Executive Summary
-                      </div>
-                      <div className="p-3 rounded-lg bg-panel border border-border-subtle text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">
-                        {notes.summaryMd}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Key Decisions */}
-                  {notes && notes.decisions && notes.decisions.length > 0 && (
-                    <div className="space-y-2">
-                      <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                        Key Decisions ({notes.decisions.length})
-                      </div>
-                      <div className="space-y-2">
-                        {notes.decisions.map((dec, idx) => (
-                          <div
-                            key={idx}
-                            className="p-2.5 rounded-lg bg-panel border border-border-subtle space-y-1.5 text-xs"
-                          >
-                            <div className="font-medium text-foreground">{dec.text}</div>
-                            {dec.evidence && dec.evidence.length > 0 && (
-                              <div className="flex flex-wrap gap-1.5 pt-0.5">
-                                {dec.evidence.map((ev, evIdx) => (
-                                  <button
-                                    key={evIdx}
-                                    type="button"
-                                    onClick={() => jumpToCue(ev.seq)}
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-accent/10 hover:bg-accent/20 text-accent border border-accent/20 transition-colors"
-                                    title={`Jump to Cue #${ev.seq}`}
-                                  >
-                                    <ExternalLink className="w-2.5 h-2.5" />
-                                    Cue #{ev.seq}: &quot;{ev.quote.slice(0, 40)}...&quot;
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Open Questions */}
-                  {notes && notes.openQuestions && notes.openQuestions.length > 0 && (
-                    <div className="space-y-2">
-                      <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                        <HelpCircle className="w-3 h-3 text-amber-400" />
-                        Open Questions ({notes.openQuestions.length})
-                      </div>
-                      <div className="space-y-1.5">
-                        {notes.openQuestions.map((q, idx) => (
-                          <div
-                            key={idx}
-                            className="p-2.5 rounded-lg bg-panel border border-border-subtle text-xs text-foreground/90"
-                          >
-                            • {q.text}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Suggested actions with human decisions (Requirement N-2) */}
-                  {actionItems.length > 0 && (() => {
-                    const validItems = actionItems.filter((i) => i.validationStatus !== 'invalid_evidence');
-                    const invalidItems = actionItems.filter((i) => i.validationStatus === 'invalid_evidence');
-                    const pending = validItems.filter((i) => i.state === 'suggested').length;
-
-                    return (
-                      <div className="space-y-3">
-                        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center justify-between">
-                          <span className="flex items-center gap-1">
-                            <ListChecks className="w-3.5 h-3.5 text-sky-400" />
-                            Suggested Actions ({pending} awaiting decision)
-                          </span>
-                          <span className="text-[10px] text-muted-foreground normal-case tracking-normal">
-                            Tasks change only after a human decision
-                          </span>
-                        </div>
-
-                        <div className="space-y-2.5">
-                          {validItems.map((item) => (
-                            <ActionItemCard
-                              key={item.id}
-                              item={item}
-                              orgId={orgId}
-                              onJumpToCue={jumpToCue}
-                              onItemChange={(updated) =>
-                                setActionItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)))
-                              }
-                            />
-                          ))}
-                        </div>
-
-                        {/* Excluded Invalid Evidence Items */}
-                        {invalidItems.length > 0 && (
-                          <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 space-y-2 text-xs">
-                            <div className="flex items-center gap-1.5 text-rose-400 font-semibold text-[11px]">
-                              <AlertCircle className="w-3.5 h-3.5" />
-                              <span>Filtered Out Proposals ({invalidItems.length}) — Invalid Evidence Grounding</span>
-                            </div>
-                            <p className="text-[10px] text-rose-300/80">
-                              These items were extracted by the LLM but failed strict contiguous token verification against the canonical transcript cues. They are excluded from the human review queue.
-                            </p>
-                            <div className="space-y-1.5">
-                              {invalidItems.map((inv) => (
-                                <div key={inv.id} className="p-2 rounded bg-panel/60 border border-rose-500/20 text-[11px] space-y-1">
-                                  <div className="font-medium text-foreground line-through opacity-70">
-                                    {inv.text}
-                                  </div>
-                                  <div className="text-[10px] text-muted-foreground font-mono">
-                                    Failed Quote: &quot;{inv.evidence?.[0]?.quote || 'N/A'}&quot;
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </>
-              )}
-            </div>
-          )}
-
-          {/* Stage 14: Project Routing & AskHost Controls */}
-          {(meeting.status === 'awaiting_project_choice' || meeting.status === 'routed' || meeting.status === 'transcript_ready') && (
-            <div className="p-4 rounded-xl bg-panel-inset border border-border-subtle space-y-3.5">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <FolderKanban className="w-3.5 h-3.5 text-accent" />
-                  Project Routing
+          {showRouting && (
+            <section aria-labelledby={`${ids}-routing`} className="card space-y-3 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 id={`${ids}-routing`} className="text-sm font-semibold text-fg">
+                  {meeting.status === 'routed' ? 'Project' : 'Which project is this meeting for?'}
                 </h3>
                 {meeting.routingConfidence !== null && meeting.routingConfidence !== undefined && (
-                  <span className={`text-[11px] font-mono px-2 py-0.5 rounded-full border ${
-                    meeting.routingConfidence >= 0.70
-                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                      : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                  }`}>
-                    {Math.round(meeting.routingConfidence * 100)}% Confidence
-                  </span>
+                  <Badge variant={meeting.routingConfidence >= 0.7 ? 'success' : 'warning'}>
+                    {Math.round(meeting.routingConfidence * 100)}% match
+                  </Badge>
                 )}
               </div>
 
-              {/* AI Routing Suggestion Info */}
               {meeting.suggestedNodeId && (
-                <div className="p-3 rounded-lg bg-panel border border-border-subtle text-xs space-y-1">
-                  <div className="flex items-center gap-1.5 text-muted-foreground">
-                    <Sparkles className="w-3.5 h-3.5 text-accent" />
-                    <span>AI Recommendation:</span>
-                    <span className="font-semibold text-foreground">
-                      {candidates.find((c) => c.id === meeting.suggestedNodeId)?.name || 'Project Node'}
+                <p className="flex items-start gap-2 text-sm text-fg-muted">
+                  <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-accent-text" aria-hidden="true" />
+                  <span>
+                    Suggested:{' '}
+                    <span className="font-medium text-fg">
+                      {candidates.find((c) => c.id === meeting.suggestedNodeId)?.name || meeting.suggestedNodeTitle || 'a project'}
                     </span>
-                  </div>
-                  {meeting.routingReason && (
-                    <p className="text-[11px] text-muted-foreground/90 italic pl-5">
-                      &quot;{meeting.routingReason}&quot;
-                    </p>
-                  )}
-                </div>
+                    {meeting.routingReason && <span> because “{meeting.routingReason}”</span>}
+                  </span>
+                </p>
               )}
 
-              {/* Route Selection Form */}
-              <div className="space-y-2">
-                <label className="text-[11px] font-semibold text-muted-foreground block">
-                  {meeting.status === 'routed' ? 'Current Project Leaf:' : 'Select Target Project Leaf:'}
-                </label>
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                  <select
-                    value={selectedProjectId}
-                    onChange={(e) => setSelectedProjectId(e.target.value)}
-                    disabled={routingSubmitting || loadingCandidates}
-                    className="flex-1 px-3 py-1.5 rounded-lg bg-panel border border-border-subtle text-xs text-foreground focus:outline-none focus:border-accent"
-                  >
-                    <option value="">-- Choose Project Leaf --</option>
-                    {candidates.map((cand) => (
-                      <option key={cand.id} value={cand.id}>
-                        {cand.teamName ? `[${cand.teamName}] ` : ''}{cand.name} ({cand.path})
-                      </option>
-                    ))}
-                  </select>
-
-                  <button
-                    type="button"
-                    onClick={handleRouteMeeting}
-                    disabled={routingSubmitting || !selectedProjectId}
-                    className="px-3.5 py-1.5 rounded-lg bg-accent text-accent-foreground font-semibold text-xs flex items-center justify-center gap-1.5 hover:bg-accent/90 transition-colors disabled:opacity-50"
-                  >
-                    {routingSubmitting ? <RotateCw className="w-3 h-3 animate-spin" /> : <ArrowRight className="w-3 h-3" />}
-                    {meeting.status === 'routed' ? 'Update Route' : 'Confirm Project Route'}
-                  </button>
-                </div>
-
-                {routingError && (
-                  <div className="text-xs text-rose-400 p-2 rounded bg-rose-500/10 border border-rose-500/20">
-                    {routingError}
-                  </div>
-                )}
-                {routingSuccess && (
-                  <div className="text-xs text-emerald-400 p-2 rounded bg-emerald-500/10 border border-emerald-500/20">
-                    {routingSuccess}
-                  </div>
-                )}
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <select
+                  value={selectedProjectId}
+                  onChange={(e) => setSelectedProjectId(e.target.value)}
+                  disabled={routingSubmitting || loadingCandidates}
+                  aria-label="Project"
+                  className="field field-sm flex-1"
+                >
+                  <option value="">Choose a project</option>
+                  {candidates.map((cand) => (
+                    <option key={cand.id} value={cand.id}>
+                      {cand.teamName ? `${cand.teamName} › ` : ''}
+                      {cand.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleRouteMeeting}
+                  disabled={routingSubmitting || !selectedProjectId}
+                  className="btn btn-primary btn-sm"
+                >
+                  {routingSubmitting ? 'Saving…' : meeting.status === 'routed' ? 'Move meeting' : 'Use this project'}
+                </button>
               </div>
-            </div>
+
+              {routingError && <Alert>{routingError}</Alert>}
+              {routingSuccess && <Alert tone="success">{routingSuccess}</Alert>}
+            </section>
           )}
 
-          {/* Stage 14: Speaker Resolution Section */}
-          {(speakers.length > 0 || loadingSpeakers) && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <Users className="w-3.5 h-3.5" />
-                  Speaker Resolution ({speakers.length} speakers)
-                </h3>
+          <div role="tablist" aria-label="Meeting sections" className="tabs">
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                id={`${ids}-tab-${t.id}`}
+                aria-selected={activeTab === t.id}
+                aria-controls={`${ids}-panel-${t.id}`}
+                tabIndex={activeTab === t.id ? 0 : -1}
+                onClick={() => setActiveTab(t.id)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+                  const i = tabs.findIndex((x) => x.id === activeTab);
+                  const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]!;
+                  setActiveTab(next.id);
+                  document.getElementById(`${ids}-tab-${next.id}`)?.focus();
+                }}
+                className="tab"
+              >
+                {t.label}
+                {t.count !== undefined && <span className="count">{t.count}</span>}
+              </button>
+            ))}
+          </div>
+
+          {/* Notes */}
+          <div role="tabpanel" id={`${ids}-panel-notes`} aria-labelledby={`${ids}-tab-notes`} hidden={activeTab !== 'notes'} className="space-y-6">
+            {loadingNotes ? (
+              <div role="status" aria-busy="true" className="space-y-2">
+                <span className="sr-only">Loading notes…</span>
+                <div className="skeleton h-3.5 w-full" />
+                <div className="skeleton h-3.5 w-5/6" />
+                <div className="skeleton h-3.5 w-2/3" />
               </div>
+            ) : notesError ? (
+              <Alert
+                action={
+                  <button type="button" onClick={() => fetchNotes(meeting.id)} className="link shrink-0">
+                    Try again
+                  </button>
+                }
+              >
+                {notesError}
+              </Alert>
+            ) : !notes && actionItems.length === 0 ? (
+              <p className="py-6 text-center text-sm text-fg-muted">
+                Notes appear here once the transcript is in and the meeting has a project.
+              </p>
+            ) : (
+              <>
+                {notes?.summaryMd && (
+                  <section className="space-y-2">
+                    <SectionTitle>Summary</SectionTitle>
+                    <SafeMarkdownView content={notes.summaryMd} />
+                  </section>
+                )}
 
-              {loadingSpeakers ? (
-                <div className="p-4 text-center text-xs text-muted-foreground bg-panel-inset rounded-lg">
-                  <RotateCw className="w-3.5 h-3.5 animate-spin mx-auto mb-1 text-accent" />
-                  Loading speaker resolutions...
-                </div>
-              ) : speakersError ? (
-                <div className="p-2.5 text-xs text-rose-400 bg-rose-500/10 rounded-lg">
-                  {speakersError}
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {speakers.map((spk) => {
-                    const isEditing = editingSpeakerLabel === spk.speakerLabel;
-                    return (
-                      <div
-                        key={spk.speakerLabel}
-                        className="p-2.5 rounded-lg bg-panel-inset border border-border-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
-                      >
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-foreground px-2 py-0.5 rounded text-[11px] bg-accent/10 text-accent border border-accent/20">
-                              {spk.speakerLabel}
-                            </span>
-                            {getMethodBadge(spk.resolutionMethod)}
-                          </div>
-                          <div className="text-muted-foreground text-[11px]">
-                            {spk.userName ? (
-                              <span>
-                                {spk.userName} <span className="text-muted-foreground/60">({spk.userEmail})</span>
-                              </span>
-                            ) : (
-                              <span className="italic text-zinc-500">Unassigned / Guest</span>
-                            )}
-                          </div>
-                        </div>
+                {notes && notes.decisions && notes.decisions.length > 0 && (
+                  <section className="space-y-2">
+                    <SectionTitle count={notes.decisions.length}>Decisions</SectionTitle>
+                    <ul className="space-y-2">
+                      {notes.decisions.map((dec, idx) => (
+                        <li key={idx} className="space-y-1 text-sm">
+                          <p className="text-fg">{dec.text}</p>
+                          {dec.evidence?.map((ev, evIdx) => (
+                            <button
+                              key={evIdx}
+                              type="button"
+                              onClick={() => jumpToCue(ev.seq)}
+                              className="flex max-w-full items-start gap-1.5 text-left text-xs text-fg-muted hover:text-accent-text"
+                              title="Show this line in the transcript"
+                            >
+                              <Quote className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+                              <span className="truncate">“{ev.quote}”</span>
+                            </button>
+                          ))}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
 
-                        {/* Edit Control */}
-                        <div>
+                {notes && notes.openQuestions && notes.openQuestions.length > 0 && (
+                  <section className="space-y-2">
+                    <SectionTitle count={notes.openQuestions.length}>Open questions</SectionTitle>
+                    <ul className="list-disc space-y-1 pl-5 text-sm text-fg marker:text-fg-subtle">
+                      {notes.openQuestions.map((q, idx) => (
+                        <li key={idx}>{q.text}</li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+
+                {actionItems.length > 0 && (
+                  <section className="space-y-3">
+                    <div className="space-y-0.5">
+                      <SectionTitle count={validItems.length}>Suggested action items</SectionTitle>
+                      <p className="text-xs text-fg-muted">
+                        {pendingCount > 0 ? `${pendingCount} waiting for a decision. ` : ''}Tasks change only after someone approves.
+                      </p>
+                    </div>
+                    <div className="space-y-3">
+                      {validItems.map((item) => (
+                        <ActionItemCard
+                          key={item.id}
+                          item={item}
+                          orgId={orgId}
+                          onJumpToCue={jumpToCue}
+                          onItemChange={(updated) => setActionItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)))}
+                        />
+                      ))}
+                    </div>
+
+                    {invalidItems.length > 0 && (
+                      <details className="rounded-lg border border-border px-3 py-2 text-sm">
+                        <summary className="cursor-pointer text-fg-muted">
+                          {invalidItems.length} suggestion{invalidItems.length === 1 ? '' : 's'} hidden because the quote wasn't found in the transcript
+                        </summary>
+                        <ul className="mt-2 space-y-2">
+                          {invalidItems.map((inv) => (
+                            <li key={inv.id} className="space-y-0.5">
+                              <p className="text-fg-muted line-through">{inv.text}</p>
+                              <p className="text-xs text-fg-subtle">Quoted: “{inv.evidence?.[0]?.quote || 'none'}”</p>
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                  </section>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Transcript */}
+          <div role="tabpanel" id={`${ids}-panel-transcript`} aria-labelledby={`${ids}-tab-transcript`} hidden={activeTab !== 'transcript'} className="space-y-5">
+            {(speakers.length > 0 || loadingSpeakers || speakersError) && (
+              <section className="space-y-2">
+                <SectionTitle count={speakers.length}>Speakers</SectionTitle>
+                {loadingSpeakers ? (
+                  <div className="skeleton h-12 w-full" aria-hidden="true" />
+                ) : speakersError ? (
+                  <Alert>{speakersError}</Alert>
+                ) : (
+                  <ul className="card divide-y divide-border overflow-hidden">
+                    {speakers.map((spk) => {
+                      const isEditing = editingSpeakerLabel === spk.speakerLabel;
+                      const method = spk.resolutionMethod ? SPEAKER_METHOD[spk.resolutionMethod] : undefined;
+                      return (
+                        <li key={spk.speakerLabel} className="flex flex-col gap-2 px-3 py-2.5 text-sm sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
+                            <p className="flex flex-wrap items-center gap-2">
+                              <span className="font-medium text-fg">{spk.speakerLabel}</span>
+                              {method ? <Badge variant={method.tone}>{method.label}</Badge> : <Badge>Not matched</Badge>}
+                            </p>
+                            <p className="truncate text-xs text-fg-muted">
+                              {spk.userName ? `${spk.userName} · ${spk.userEmail}` : 'Guest or not linked to a member'}
+                            </p>
+                          </div>
                           {isEditing ? (
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex flex-wrap items-center gap-1.5">
                               <select
                                 value={selectedUserForEdit}
                                 onChange={(e) => setSelectedUserForEdit(e.target.value)}
-                                className="px-2 py-1 rounded bg-panel border border-border-subtle text-xs text-foreground focus:outline-none"
+                                aria-label={`Member for ${spk.speakerLabel}`}
+                                className="field field-sm w-auto"
                               >
-                                <option value="">Unassigned</option>
+                                <option value="">Not a member</option>
                                 {members.map((m) => (
                                   <option key={m.id} value={m.id}>
-                                    {m.name} ({m.email})
+                                    {m.name}
                                   </option>
                                 ))}
                               </select>
-                              <button
-                                type="button"
-                                onClick={handleSaveSpeakerMapping}
-                                disabled={savingSpeakerMapping}
-                                className="px-2 py-1 rounded bg-accent text-accent-foreground font-semibold text-[11px] disabled:opacity-50"
-                              >
-                                {savingSpeakerMapping ? 'Saving...' : 'Save'}
+                              <button type="button" onClick={handleSaveSpeakerMapping} disabled={savingSpeakerMapping} className="btn btn-primary btn-sm">
+                                {savingSpeakerMapping ? 'Saving…' : 'Save'}
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => setEditingSpeakerLabel(null)}
-                                className="px-2 py-1 rounded border border-border-subtle text-muted-foreground text-[11px]"
-                              >
+                              <button type="button" onClick={() => setEditingSpeakerLabel(null)} className="btn btn-ghost btn-sm">
                                 Cancel
                               </button>
                             </div>
@@ -947,292 +780,174 @@ export function MeetingDetailDrawer({
                                 setEditingSpeakerLabel(spk.speakerLabel);
                                 setSelectedUserForEdit(spk.userId || '');
                               }}
-                              className="text-[11px] text-accent hover:underline font-medium"
+                              className="btn btn-ghost btn-sm self-start sm:self-auto"
                             >
-                              Edit Mapping
+                              Change
                             </button>
                           )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                {speakerSaveError && <Alert onDismiss={() => setSpeakerSaveError(null)}>{speakerSaveError}</Alert>}
+              </section>
+            )}
 
-          {/* Normalized Transcript Segments Section */}
-          {segments.length > 0 && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  Canonical Transcript ({segments.length} segments)
-                </h3>
-                <span className="text-[11px] font-mono text-muted-foreground">
-                  Anchors: 1..{segments.length}
-                </span>
+            <section className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <SectionTitle count={segments.length || undefined}>Transcript</SectionTitle>
+                {segments.length > 0 && (
+                  <div className="relative w-full sm:w-56">
+                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
+                    <input
+                      type="search"
+                      aria-label="Search the transcript"
+                      placeholder="Search words or speaker"
+                      value={transcriptSearch}
+                      onChange={(e) => setTranscriptSearch(e.target.value)}
+                      className="field field-sm pl-8"
+                    />
+                  </div>
+                )}
               </div>
 
-              {/* Search Filter */}
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  type="text"
-                  placeholder="Filter transcript cues or search speaker..."
-                  value={transcriptSearch}
-                  onChange={(e) => setTranscriptSearch(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-panel-inset border border-border-subtle text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-accent"
-                />
-              </div>
-
-              {/* Transcript Display Box */}
               {loadingTranscript ? (
-                <div className="p-8 text-center text-xs text-muted-foreground bg-panel-inset rounded-lg border border-border-subtle flex flex-col items-center gap-2">
-                  <RotateCw className="w-4 h-4 animate-spin text-accent" />
-                  Loading normalized transcript...
-                </div>
-              ) : transcriptError ? (
-                <div className="p-3 text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-lg">
-                  {transcriptError}
-                </div>
-              ) : filteredSegments.length === 0 ? (
-                <div className="p-6 text-center text-xs text-muted-foreground bg-panel-inset rounded-lg border border-border-subtle">
-                  No cues match the filter criteria.
-                </div>
-              ) : (
-                <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
-                  {filteredSegments.map((seg) => (
-                    <div
-                      key={seg.seq}
-                      id={`seg-${seg.seq}`}
-                      className="p-3 rounded-lg bg-panel-inset border border-border-subtle hover:border-accent/30 transition-colors space-y-1.5"
-                    >
-                      <div className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-[10px] text-muted-foreground bg-panel px-1.5 py-0.5 rounded border border-border-subtle flex items-center gap-0.5">
-                            <Hash className="w-2.5 h-2.5" />
-                            {seg.seq}
-                          </span>
-                          <span className="font-semibold text-foreground px-2 py-0.5 rounded-full text-[11px] bg-accent/15 text-accent border border-accent/20">
-                            {seg.speakerLabel}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-[11px] text-muted-foreground">
-                            {formatMsToTimestamp(seg.startMs)}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleCopyAnchor(seg)}
-                            className="p-1 text-muted-foreground hover:text-accent rounded transition-colors"
-                            title="Copy anchor link to timestamp"
-                          >
-                            {copiedAnchorSeq === seg.seq ? (
-                              <Check className="w-3 h-3 text-emerald-400" />
-                            ) : (
-                              <Copy className="w-3 h-3" />
-                            )}
-                          </button>
-                        </div>
-                      </div>
-                      <p className="text-xs text-foreground/90 leading-relaxed pl-1 whitespace-pre-wrap">
-                        {seg.text}
-                      </p>
-                    </div>
+                <div role="status" aria-busy="true" className="space-y-2">
+                  <span className="sr-only">Loading transcript…</span>
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className="skeleton h-14 w-full" />
                   ))}
                 </div>
+              ) : transcriptError ? (
+                <Alert
+                  action={
+                    <button type="button" onClick={() => fetchTranscript(meeting.id)} className="link shrink-0">
+                      Try again
+                    </button>
+                  }
+                >
+                  {transcriptError}
+                </Alert>
+              ) : segments.length === 0 ? (
+                <p className="py-6 text-center text-sm text-fg-muted">
+                  {meeting.skipped ? 'This meeting was skipped and its transcript deleted.' : 'The transcript will appear once Zoom has processed the recording.'}
+                </p>
+              ) : filteredSegments.length === 0 ? (
+                <p className="py-6 text-center text-sm text-fg-muted">No lines match “{transcriptSearch}”.</p>
+              ) : (
+                <ol className="space-y-1">
+                  {filteredSegments.map((seg) => (
+                    <li key={seg.seq} id={`seg-${seg.seq}`} className="group rounded-lg px-2.5 py-2 transition-colors hover:bg-surface-2">
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="font-medium text-fg">{seg.speakerLabel}</span>
+                        <span className="font-mono tabular-nums text-fg-subtle">{formatMsToTimestamp(seg.startMs)}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyAnchor(seg)}
+                          className="ml-auto rounded p-1 text-fg-subtle opacity-100 hover:text-fg focus-visible:opacity-100 group-hover:opacity-100 md:opacity-0"
+                          aria-label={`Copy link to line ${seg.seq}`}
+                          title="Copy link to this line"
+                        >
+                          {copiedAnchorSeq === seg.seq ? <Check className="h-3.5 w-3.5 text-success" aria-hidden="true" /> : <Copy className="h-3.5 w-3.5" aria-hidden="true" />}
+                        </button>
+                      </div>
+                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-fg">{seg.text}</p>
+                    </li>
+                  ))}
+                </ol>
               )}
-            </div>
-          )}
+            </section>
+          </div>
 
-          {/* Meeting Metadata Details */}
-          <div className="space-y-3">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              Meeting Information
-            </h3>
-
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="p-2.5 rounded bg-panel-inset border border-border-subtle">
-                <span className="text-muted-foreground block text-[11px]">Provider</span>
-                <span className="font-medium capitalize">{meeting.provider}</span>
-              </div>
-
-              <div className="p-2.5 rounded bg-panel-inset border border-border-subtle">
-                <span className="text-muted-foreground block text-[11px]">Duration</span>
-                <span className="font-medium">
-                  {meeting.durationSeconds ? `${Math.round(meeting.durationSeconds / 60)} mins` : '—'}
-                </span>
-              </div>
-
-              <div className="p-2.5 rounded bg-panel-inset border border-border-subtle col-span-2">
-                <span className="text-muted-foreground block text-[11px]">Host</span>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <User className="w-3.5 h-3.5 text-muted-foreground" />
-                  <span className="font-medium font-mono text-[11px]">
-                    {meeting.zoomHostEmail || meeting.zoomHostId || 'Unknown Host'}
-                  </span>
+          {/* Details */}
+          <div role="tabpanel" id={`${ids}-panel-details`} aria-labelledby={`${ids}-tab-details`} hidden={activeTab !== 'details'} className="space-y-6">
+            <dl className="card divide-y divide-border overflow-hidden text-sm">
+              {[
+                ['Host', meeting.zoomHostEmail || meeting.zoomHostId || 'Unknown'],
+                ['Started', meeting.actualStartAt ? `${formatDateTime(meeting.actualStartAt)}${meeting.timezone ? ` (${meeting.timezone})` : ''}` : '—'],
+                ['Length', meeting.durationSeconds ? `${Math.round(meeting.durationSeconds / 60)} minutes` : '—'],
+                ['Recording', meeting.hasRecording ? 'Available' : 'None'],
+                ['Transcript', meeting.hasTranscript ? 'Available' : 'Not yet'],
+                ...(meeting.transcriptRetentionDeadline
+                  ? [['Transcript deleted on', new Date(meeting.transcriptRetentionDeadline).toLocaleDateString()]]
+                  : []),
+                ...(notes ? [['Notes written by', `${notes.model} (${notes.promptVersion})`]] : []),
+              ].map(([k, v]) => (
+                <div key={k} className="grid grid-cols-3 gap-3 px-4 py-2.5">
+                  <dt className="text-fg-muted">{k}</dt>
+                  <dd className="col-span-2 break-words text-fg">{v}</dd>
                 </div>
-              </div>
-
-              <div className="p-2.5 rounded bg-panel-inset border border-border-subtle col-span-2">
-                <span className="text-muted-foreground block text-[11px]">Start Time</span>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
-                  <span>
-                    {meeting.actualStartAt ? new Date(meeting.actualStartAt).toLocaleString() : '—'}
-                    {meeting.timezone ? ` (${meeting.timezone})` : ''}
-                  </span>
-                </div>
-              </div>
-
-              <div className="p-2.5 rounded bg-panel-inset border border-border-subtle col-span-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground text-[11px]">Provider UUID</span>
-                  <button
-                    type="button"
-                    onClick={handleCopyUuid}
-                    className="text-[11px] text-accent hover:underline flex items-center gap-1"
-                  >
-                    {copiedUuid ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+              ))}
+              <div className="grid grid-cols-3 gap-3 px-4 py-2.5">
+                <dt className="text-fg-muted">Zoom ID</dt>
+                <dd className="col-span-2 flex items-start justify-between gap-2">
+                  <span className="break-all font-mono text-xs text-fg">{meeting.providerNumericId || meeting.providerMeetingUuid}</span>
+                  <button type="button" onClick={handleCopyUuid} className="btn btn-ghost btn-sm -my-1 shrink-0">
+                    {copiedUuid ? <Check className="text-success" aria-hidden="true" /> : <Copy aria-hidden="true" />}
                     {copiedUuid ? 'Copied' : 'Copy'}
                   </button>
-                </div>
-                <span className="font-mono text-[10px] break-all text-muted-foreground mt-0.5 block">
-                  {meeting.providerMeetingUuid}
-                </span>
+                </dd>
               </div>
-            </div>
-          </div>
+            </dl>
 
-          {/* Media Readiness Flags */}
-          <div className="space-y-3">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              Media Availability &amp; Retention
-            </h3>
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="p-2.5 rounded bg-panel-inset border border-border-subtle flex items-center justify-between">
-                <span>Cloud Recording</span>
-                <span className={meeting.hasRecording ? 'text-emerald-400 font-semibold' : 'text-muted-foreground'}>
-                  {meeting.hasRecording ? 'Available' : 'None'}
-                </span>
+            {retryError && <Alert onDismiss={() => setRetryError(null)}>{retryError}</Alert>}
+
+            {(canRetry || canSkip) && (
+              <div className="flex flex-wrap gap-2">
+                {canRetry && (
+                  <button type="button" onClick={handleRetry} disabled={retrying} className="btn btn-primary btn-sm">
+                    <RotateCw className={retrying ? 'animate-spin' : ''} aria-hidden="true" />
+                    {retrying ? 'Checking…' : 'Check again'}
+                  </button>
+                )}
+                {canSkip && (
+                  <button type="button" onClick={() => setIsSkipModalOpen(true)} className="btn btn-danger-soft btn-sm">
+                    <Trash2 aria-hidden="true" />
+                    Skip and delete data
+                  </button>
+                )}
               </div>
-              <div className="p-2.5 rounded bg-panel-inset border border-border-subtle flex items-center justify-between">
-                <span>Audio Transcript</span>
-                <span className={meeting.hasTranscript ? 'text-emerald-400 font-semibold' : 'text-amber-400 font-semibold'}>
-                  {meeting.hasTranscript ? 'Available' : 'Pending'}
-                </span>
-              </div>
-              {meeting.transcriptRetentionDeadline && (
-                <div className="p-2.5 rounded bg-panel-inset border border-border-subtle col-span-2 flex items-center justify-between">
-                  <span>Retention Deadline (180 days)</span>
-                  <span className="font-mono text-[11px] text-muted-foreground">
-                    {new Date(meeting.transcriptRetentionDeadline).toLocaleDateString()}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Actions Section: Retry and Skip */}
-          <div className="pt-4 border-t border-border-subtle space-y-3">
-            {retryError && (
-              <div className="text-xs text-rose-400 p-2 rounded bg-rose-500/10 border border-rose-500/20">
-                {retryError}
-              </div>
-            )}
-
-            {canRetry && (
-              <button
-                type="button"
-                onClick={handleRetry}
-                disabled={retrying}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-accent text-accent-foreground font-semibold text-xs hover:bg-accent/90 disabled:opacity-50 transition-colors"
-              >
-                <RotateCw className={`w-3.5 h-3.5 ${retrying ? 'animate-spin' : ''}`} />
-                {retrying ? 'Evaluating Consent & State...' : 'Re-evaluate Meeting Intake'}
-              </button>
-            )}
-
-            {canSkip && (
-              <button
-                type="button"
-                onClick={() => setIsSkipModalOpen(true)}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 font-semibold text-xs transition-colors"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Skip Meeting &amp; Purge Data
-              </button>
             )}
 
             {meeting.skipped && (
-              <div className="p-2.5 rounded-lg bg-panel-inset border border-border-subtle text-center text-xs text-muted-foreground">
-                This meeting was skipped. All transcript segments and AI artifacts have been purged.
-              </div>
+              <p className="text-sm text-fg-muted">This meeting was skipped. Its transcript, notes and suggestions were deleted.</p>
             )}
           </div>
         </div>
       </Drawer>
 
-      {/* Confirmation Modal for Skip & Purge */}
       <Dialog
         isOpen={isSkipModalOpen}
         onClose={() => !skipping && setIsSkipModalOpen(false)}
-        title="Skip Meeting and Purge Artifacts"
-        description="Permanently delete ingested data and fence background workers."
+        title="Skip this meeting?"
+        description="Its transcript, notes and suggested action items are deleted for good, and nothing more is processed. Tasks you already approved stay."
         maxWidthClass="max-w-md"
       >
-        <div className="space-y-4 text-xs text-foreground">
-          <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 space-y-1.5 leading-relaxed">
-            <p className="font-semibold flex items-center gap-1.5 text-rose-400">
-              <AlertTriangle className="w-4 h-4 shrink-0" />
-              Irreversible Action
-            </p>
-            <p>
-              Skipping this meeting will increment its processing generation to fence any in-flight workers,
-              permanently purge all database transcript segments and action items, and delete the raw audio
-              transcript file from storage.
-            </p>
-          </div>
-
-          <div className="space-y-1.5">
-            <label htmlFor="skip-reason" className="font-medium text-foreground block">
-              Reason for skipping (optional):
+        <div className="space-y-4">
+          <div>
+            <label htmlFor={`${ids}-skip-reason`} className="label">
+              Reason <span className="font-normal text-fg-subtle">(optional)</span>
             </label>
             <input
-              id="skip-reason"
+              id={`${ids}-skip-reason`}
               type="text"
-              placeholder="e.g. Private conversation, irrelevant sync..."
+              placeholder="e.g. Private conversation"
               value={skipReason}
               onChange={(e) => setSkipReason(e.target.value)}
               disabled={skipping}
-              className="w-full px-3 py-2 rounded-lg bg-panel-inset border border-border-subtle text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-accent"
+              className="field"
             />
           </div>
 
-          {skipError && (
-            <div className="p-2.5 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400">
-              {skipError}
-            </div>
-          )}
+          {skipError && <Alert>{skipError}</Alert>}
 
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-border-subtle">
-            <button
-              type="button"
-              onClick={() => setIsSkipModalOpen(false)}
-              disabled={skipping}
-              className="px-3 py-1.5 rounded-lg border border-border-subtle text-muted-foreground hover:text-foreground text-xs transition-colors"
-            >
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setIsSkipModalOpen(false)} disabled={skipping} className="btn btn-ghost">
               Cancel
             </button>
-            <button
-              type="button"
-              onClick={handleSkipMeeting}
-              disabled={skipping}
-              className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50"
-            >
-              {skipping && <RotateCw className="w-3.5 h-3.5 animate-spin" />}
-              {skipping ? 'Purging Artifacts...' : 'Confirm Skip & Purge'}
+            <button type="button" onClick={handleSkipMeeting} disabled={skipping} className="btn btn-danger">
+              {skipping ? 'Deleting…' : 'Skip and delete'}
             </button>
           </div>
         </div>

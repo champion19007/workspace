@@ -3,41 +3,24 @@
 import React from 'react';
 import { Dialog } from '../ui/dialog';
 import { useShell } from './shell-context';
-import { Compass, Layout, Zap } from 'lucide-react';
 
-interface ShortcutGroup {
-  name: string;
-  icon: React.ReactNode;
-  shortcuts: { keys: string[]; description: string }[];
-}
-
-const SHORTCUT_GROUPS: ShortcutGroup[] = [
+const SHORTCUT_GROUPS: { name: string; shortcuts: { keys: string[]; description: string }[] }[] = [
   {
-    name: 'Global & System',
-    icon: <Zap className="w-4 h-4 text-accent" />,
+    name: 'Anywhere',
     shortcuts: [
-      { keys: ['Ctrl', 'K'], description: 'Open Command Palette / Search' },
-      { keys: ['Shift', '?'], description: 'Show Keyboard Shortcuts' },
-      { keys: ['Esc'], description: 'Close active drawer, modal, or popover' },
+      { keys: ['Ctrl', 'K'], description: 'Search and jump to a page' },
+      { keys: ['Shift', '?'], description: 'Show keyboard shortcuts' },
+      { keys: ['Esc'], description: 'Close the open panel or menu' },
     ],
   },
   {
-    name: 'Views & Navigation',
-    icon: <Compass className="w-4 h-4 text-indigo-400" />,
+    name: 'Go to',
     shortcuts: [
-      { keys: ['Shift', 'D'], description: 'Jump to Project Dashboard' },
-      { keys: ['Shift', 'L'], description: 'Jump to Project Task List' },
-      { keys: ['Shift', 'B'], description: 'Jump to Project Kanban Board' },
-      { keys: ['Alt', 'M'], description: 'Jump to My Tasks' },
-      { keys: ['Alt', 'Shift', 'T'], description: 'Jump to Teams Directory' },
-    ],
-  },
-  {
-    name: 'Interface Actions',
-    icon: <Layout className="w-4 h-4 text-emerald-400" />,
-    shortcuts: [
-      { keys: ['Tab'], description: 'Cycle through focusable elements' },
-      { keys: ['Enter'], description: 'Select / Execute active item' },
+      { keys: ['Shift', 'D'], description: 'Home' },
+      { keys: ['Alt', 'M'], description: 'My tasks' },
+      { keys: ['Shift', 'L'], description: 'All tasks' },
+      { keys: ['Shift', 'B'], description: 'Board' },
+      { keys: ['Alt', 'Shift', 'T'], description: 'Teams' },
     ],
   },
 ];
@@ -49,44 +32,30 @@ export function ShortcutsDialog() {
     <Dialog
       isOpen={isShortcutsDialogOpen}
       onClose={() => setIsShortcutsDialogOpen(false)}
-      title="Keyboard Shortcuts"
-      description="Navigate rapidly across Workspace v1 without using your mouse."
-      maxWidthClass="max-w-lg"
+      title="Keyboard shortcuts"
+      description="Single-key shortcuts are paused while you type in a field."
+      maxWidthClass="max-w-md"
     >
       <div className="space-y-5">
-        {SHORTCUT_GROUPS.map((group, idx) => (
-          <div key={idx} className="space-y-2">
-            <div className="flex items-center gap-2 text-xs font-bold text-foreground uppercase tracking-wider">
-              {group.icon}
-              <span>{group.name}</span>
-            </div>
-
-            <div className="rounded-xl border border-border-subtle bg-panel-inset divide-y divide-border-subtle overflow-hidden">
-              {group.shortcuts.map((sc, sIdx) => (
-                <div
-                  key={sIdx}
-                  className="flex items-center justify-between p-2.5 text-xs"
-                >
-                  <span className="text-muted-foreground">{sc.description}</span>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {sc.keys.map((k, kIdx) => (
-                      <kbd
-                        key={kIdx}
-                        className="px-2 py-0.5 rounded-md bg-panel-elevated border border-border-subtle text-[11px] font-mono font-semibold text-foreground shadow-sm"
-                      >
+        {SHORTCUT_GROUPS.map((group) => (
+          <section key={group.name} className="space-y-2">
+            <h3 className="text-xs font-medium text-fg-subtle">{group.name}</h3>
+            <dl className="card divide-y divide-border overflow-hidden">
+              {group.shortcuts.map((sc) => (
+                <div key={sc.description} className="flex items-center justify-between gap-4 px-3.5 py-2.5 text-sm">
+                  <dt className="text-fg">{sc.description}</dt>
+                  <dd className="flex shrink-0 items-center gap-1">
+                    {sc.keys.map((k) => (
+                      <kbd key={k} className="kbd">
                         {k}
                       </kbd>
                     ))}
-                  </div>
+                  </dd>
                 </div>
               ))}
-            </div>
-          </div>
+            </dl>
+          </section>
         ))}
-      </div>
-
-      <div className="mt-5 text-center text-[11px] text-muted-foreground">
-        Shortcuts are automatically disabled when typing in form fields or search inputs.
       </div>
     </Dialog>
   );

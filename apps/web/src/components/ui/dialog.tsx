@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useId, useRef } from 'react';
 import { X } from 'lucide-react';
 
 const FOCUSABLE =
@@ -45,6 +45,8 @@ export function Dialog({
 }: DialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previouslyFocusedElement = useRef<HTMLElement | null>(null);
+  const titleId = useId();
+  const descriptionId = useId();
   // Latest onClose without re-running the open effect (which would steal focus on every parent render).
   const onCloseRef = useRef(onClose);
   useEffect(() => {
@@ -86,43 +88,34 @@ export function Dialog({
     <div
       role="dialog"
       aria-modal="true"
-      aria-labelledby="dialog-title"
-      aria-describedby={description ? 'dialog-description' : undefined}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      aria-labelledby={titleId}
+      aria-describedby={description ? descriptionId : undefined}
+      className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4"
     >
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
-        onClick={onClose}
-        aria-hidden="true"
-      />
+      <div className="fixed inset-0 animate-fade-in bg-overlay/50" onClick={onClose} aria-hidden="true" />
 
-      {/* Modal Dialog Card */}
+      {/* Bottom sheet on phones, centred card from sm up. */}
       <div
         ref={dialogRef}
-        className={`relative z-10 w-full ${maxWidthClass} max-h-[90vh] overflow-y-auto bg-panel border border-border-subtle rounded-2xl shadow-2xl animate-in fade-in zoom-in-95 duration-150`}
+        className={`relative z-10 max-h-[92vh] w-full ${maxWidthClass} animate-pop-in overflow-y-auto rounded-t-2xl border border-border bg-surface shadow-2xl sm:rounded-xl`}
       >
-        <div className="flex items-start justify-between p-5 border-b border-border-subtle">
-          <div>
-            <h2 id="dialog-title" className="text-lg font-bold text-foreground">
+        <div className="flex items-start justify-between gap-4 px-5 pb-2 pt-5">
+          <div className="min-w-0">
+            <h2 id={titleId} className="text-base font-semibold text-fg">
               {title}
             </h2>
             {description && (
-              <p id="dialog-description" className="text-xs text-muted-foreground mt-1">
+              <p id={descriptionId} className="mt-1 text-sm text-fg-muted">
                 {description}
               </p>
             )}
           </div>
-          <button
-            onClick={onClose}
-            aria-label="Close dialog"
-            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-panel-elevated transition-colors"
-          >
-            <X className="w-5 h-5" />
+          <button type="button" onClick={onClose} aria-label="Close dialog" className="btn btn-ghost btn-icon btn-sm -mr-1.5 -mt-1">
+            <X aria-hidden="true" />
           </button>
         </div>
 
-        <div className="p-5">{children}</div>
+        <div className="px-5 pb-5 pt-2">{children}</div>
       </div>
     </div>
   );

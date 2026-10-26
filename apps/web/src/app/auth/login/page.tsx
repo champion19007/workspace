@@ -39,24 +39,24 @@ function LoginForm() {
   };
 
   return (
-    <div className="min-h-screen bg-canvas text-foreground flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-canvas text-fg flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
-        <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-accent/20 border border-accent/40 text-accent font-black text-xl mb-4 shadow-md">
+        <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-accent-subtle border border-accent/40 text-accent-text font-semibold text-xl mb-4 shadow-md">
           W
         </div>
-        <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Sign in to Workspace</h1>
-        <p className="mt-2 text-xs text-muted-foreground">
+        <h1 className="text-3xl font-semibold tracking-tight text-fg">Sign in to Workspace</h1>
+        <p className="mt-2 text-xs text-fg-muted">
           AI-native project management, meeting intelligence &amp; evidence-backed tasks
         </p>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-panel border border-border-subtle py-8 px-6 shadow-2xl rounded-2xl sm:px-10 space-y-6">
+        <div className="bg-surface border border-border py-8 px-6 shadow-2xl rounded-xl sm:px-10 space-y-6">
           {/* 1. Google OIDC Federated Sign-in */}
           <div>
             <a
               href={`/api/auth/oauth/google${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ''}`}
-              className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl border border-border-subtle bg-panel-elevated hover:bg-panel hover:border-accent/40 text-xs font-semibold text-foreground transition-all shadow-sm focus:outline-none focus:ring-1 focus:ring-accent"
+              className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl border border-border bg-surface-2 hover:bg-surface hover:border-accent/40 text-xs font-semibold text-fg transition-all shadow-sm focus:outline-none focus:ring-1 focus:ring-accent"
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24">
                 <path
@@ -82,10 +82,10 @@ function LoginForm() {
 
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-border-subtle" />
+              <div className="w-full border-t border-border" />
             </div>
-            <div className="relative flex justify-center text-[10px] uppercase">
-              <span className="bg-panel px-3 text-muted-foreground font-semibold">Or continue with email</span>
+            <div className="relative flex justify-center text-xs ">
+              <span className="bg-surface px-3 text-fg-muted font-semibold">Or continue with email</span>
             </div>
           </div>
 
@@ -94,15 +94,15 @@ function LoginForm() {
             {error && (
               <div
                 role="alert"
-                className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-start gap-2.5"
+                className="p-3 rounded-xl bg-danger-subtle border border-danger/20 text-danger text-xs flex items-start gap-2.5"
               >
-                <AlertCircle className="w-4 h-4 text-rose-400 mt-0.5 shrink-0" />
+                <AlertCircle className="w-4 h-4 text-danger mt-0.5 shrink-0" />
                 <span>{error}</span>
               </div>
             )}
 
             <div>
-              <label htmlFor="email" className="block text-[11px] font-bold text-foreground uppercase tracking-wider mb-1.5">
+              <label htmlFor="email" className="block text-xs font-semibold text-fg mb-1.5">
                 Work Email Address
               </label>
               <div className="relative">
@@ -116,7 +116,7 @@ function LoginForm() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="alex@company.com"
-                  className="w-full rounded-xl bg-panel-inset border border-border-subtle px-3.5 py-2.5 text-foreground placeholder:text-muted-foreground text-xs focus:outline-none focus:ring-1 focus:ring-accent transition-colors"
+                  className="w-full rounded-xl bg-surface-2 border border-border px-3.5 py-2.5 text-fg placeholder:text-fg-muted text-xs focus:outline-none focus:ring-1 focus:ring-accent transition-colors"
                 />
               </div>
             </div>
@@ -124,7 +124,7 @@ function LoginForm() {
             <button
               type="submit"
               disabled={loading || !email}
-              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-accent hover:opacity-90 disabled:opacity-50 text-xs font-bold text-accent-foreground shadow-md transition-opacity"
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-accent hover:opacity-90 disabled:opacity-50 text-xs font-semibold text-accent-fg shadow-md transition-opacity"
             >
               {loading ? (
                 <span>Sending magic link...</span>
@@ -137,7 +137,7 @@ function LoginForm() {
             </button>
           </form>
 
-          <div className="pt-2 border-t border-border-subtle text-center text-[11px] text-muted-foreground">
+          <div className="pt-2 border-t border-border text-center text-xs text-fg-muted">
             Passwordless &amp; encrypted server sessions. Tokens never touch localStorage.
           </div>
         </div>
@@ -150,7 +150,7 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-canvas text-foreground flex items-center justify-center">
+        <div className="min-h-screen bg-canvas text-fg flex items-center justify-center">
           <div className="w-8 h-8 rounded-full border-2 border-accent border-t-transparent animate-spin" />
         </div>
       }

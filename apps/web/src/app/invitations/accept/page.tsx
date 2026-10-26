@@ -61,7 +61,7 @@ function AcceptInvitationContent() {
 
   if (sessionLoading) {
     return (
-      <div className="min-h-screen bg-canvas text-foreground flex items-center justify-center">
+      <div className="min-h-screen bg-canvas text-fg flex items-center justify-center">
         <div className="w-8 h-8 rounded-full border-2 border-accent border-t-transparent animate-spin" />
       </div>
     );
@@ -70,43 +70,43 @@ function AcceptInvitationContent() {
   const returnUrl = `/invitations/accept?token=${encodeURIComponent(token)}`;
 
   return (
-    <div className="min-h-screen bg-canvas text-foreground flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-canvas text-fg flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-accent/20 border border-accent/40 text-accent mb-6 shadow-md">
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-xl bg-accent-subtle border border-accent/40 text-accent-text mb-6 shadow-md">
           <UserCheck className="w-8 h-8" />
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">Join Organisation</h1>
-        <p className="mt-2 text-xs text-muted-foreground">
+        <h1 className="text-2xl font-semibold tracking-tight text-fg">Join Organisation</h1>
+        <p className="mt-2 text-xs text-fg-muted">
           You have been invited to collaborate in Workspace v1.
         </p>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-panel border border-border-subtle py-8 px-6 shadow-2xl rounded-2xl sm:px-10 space-y-6">
+        <div className="bg-surface border border-border py-8 px-6 shadow-2xl rounded-xl sm:px-10 space-y-6">
           {error && (
             <div
               role="alert"
-              className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-start gap-2.5"
+              className="p-3.5 rounded-xl bg-danger-subtle border border-danger/20 text-danger text-xs flex items-start gap-2.5"
             >
-              <AlertCircle className="w-4 h-4 text-rose-400 mt-0.5 shrink-0" />
+              <AlertCircle className="w-4 h-4 text-danger mt-0.5 shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
           {!token ? (
-            <div className="text-center text-xs text-muted-foreground">
+            <div className="text-center text-xs text-fg-muted">
               No invitation token provided. Please check the invitation link.
             </div>
           ) : currentUser ? (
             <div className="space-y-4">
-              <div className="p-3.5 rounded-xl bg-panel-inset border border-border-subtle text-xs text-muted-foreground">
-                Signed in as: <strong className="text-foreground font-mono">{currentUser.email}</strong>
+              <div className="p-3.5 rounded-xl bg-surface-2 border border-border text-xs text-fg-muted">
+                Signed in as: <strong className="text-fg font-mono">{currentUser.email}</strong>
               </div>
 
               <button
                 onClick={handleAccept}
                 disabled={loading}
-                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-accent hover:opacity-90 disabled:opacity-50 text-xs font-bold text-accent-foreground shadow-md transition-opacity"
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-accent hover:opacity-90 disabled:opacity-50 text-xs font-semibold text-accent-fg shadow-md transition-opacity"
               >
                 {loading ? (
                   <span>Joining organisation...</span>
@@ -120,13 +120,13 @@ function AcceptInvitationContent() {
             </div>
           ) : (
             <div className="space-y-4 text-center">
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-fg-muted">
                 You must sign in to accept this invitation. Your signed-in email address must match the invitation recipient.
               </p>
 
               <Link
                 href={`/auth/login?returnTo=${encodeURIComponent(returnUrl)}`}
-                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-accent hover:opacity-90 text-xs font-bold text-accent-foreground shadow-md transition-opacity"
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-accent hover:opacity-90 text-xs font-semibold text-accent-fg shadow-md transition-opacity"
               >
                 <span>Sign in to Accept</span>
                 <ArrowRight className="w-4 h-4" />
@@ -143,7 +143,7 @@ export default function AcceptInvitationPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-canvas text-foreground flex items-center justify-center">
+        <div className="min-h-screen bg-canvas text-fg flex items-center justify-center">
           <div className="w-8 h-8 rounded-full border-2 border-accent border-t-transparent animate-spin" />
         </div>
       }

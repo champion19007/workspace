@@ -5,30 +5,26 @@ import {
   ACCENT_PRESETS,
   DEFAULT_ACCENT,
 } from '../components/theme-provider';
+import { buildAccentCss, ensureContrast, getContrastRatio } from '../lib/theme';
+
+/** Reads `--accent-text` ("R G B") out of one theme block of buildAccentCss() as a hex colour. */
+function accentText(block: string): string {
+  const match = /--accent-text:(\d+) (\d+) (\d+)/.exec(block);
+  if (!match) throw new Error(`no --accent-text in ${block}`);
+  return `#${match.slice(1).map((v) => Number(v).toString(16).padStart(2, '0')).join('')}`;
+}
 
 describe('UI Shell — Theme & WCAG Contrast Logic', () => {
-  it('correctly calculates relative luminance for default accent #d86dfc', () => {
-    const lum = getRelativeLuminance(DEFAULT_ACCENT);
-    expect(lum).toBeGreaterThan(0.25);
-    expect(lum).toBeLessThan(0.40);
+  it('calculates WCAG relative luminance', () => {
+    expect(getRelativeLuminance('#ffffff')).toBeCloseTo(1, 5);
+    expect(getRelativeLuminance('#000000')).toBeCloseTo(0, 5);
+    expect(getRelativeLuminance(DEFAULT_ACCENT)).toBeGreaterThan(0.12);
+    expect(getRelativeLuminance(DEFAULT_ACCENT)).toBeLessThan(0.18);
   });
 
-  it('selects high-contrast dark foreground (#0d0614) for #d86dfc', () => {
-    const fg = getBestContrastForeground(DEFAULT_ACCENT);
-    expect(fg).toBe('#0d0614');
-
-    // Calculate actual contrast ratio
-    const lum = getRelativeLuminance(DEFAULT_ACCENT);
-    const darkLum = 0.005; // ~ #0d0614
-    const whiteLum = 1.0; // #ffffff
-
-    const darkContrast = (lum + 0.05) / (darkLum + 0.05);
-    const whiteContrast = (whiteLum + 0.05) / (lum + 0.05);
-
-    // Dark text must have significantly higher contrast ratio than white text
-    expect(darkContrast).toBeGreaterThan(6.0); // WCAG AAA requirement is >= 7:1 for normal, > 4.5:1 for large
-    expect(darkContrast).toBeGreaterThan(whiteContrast);
-    expect(whiteContrast).toBeLessThan(3.5); // White text fails WCAG AA on #d86dfc
+  it('gives the default cobalt accent a white label at AA contrast', () => {
+    expect(getBestContrastForeground(DEFAULT_ACCENT)).toBe('#ffffff');
+    expect(getContrastRatio('#ffffff', DEFAULT_ACCENT)).toBeGreaterThanOrEqual(4.5);
   });
 
   it('selects white foreground for dark accent colors', () => {
@@ -50,6 +46,30 @@ describe('UI Shell — Theme & WCAG Contrast Logic', () => {
     for (const preset of ACCENT_PRESETS) {
       const fg = getBestContrastForeground(preset.hex);
       expect(['#0d0614', '#ffffff']).toContain(fg);
+    }
+  });
+});
+
+describe('UI Shell — Accent text stays readable in both themes', () => {
+  it('leaves a colour that already passes unchanged', () => {
+    expect(ensureContrast('#3a5bc7', '#ffffff', 4.5)).toBe('#3a5bc7');
+    expect(ensureContrast('#9eb1ff', '#16191f', 4.5)).toBe('#9eb1ff');
+  });
+
+  it('adjusts every preset until it reaches the requested ratio on light and dark surfaces', () => {
+    for (const { hex } of ACCENT_PRESETS) {
+      for (const background of ['#ffffff', '#16191f', '#edf2fe']) {
+        const adjusted = ensureContrast(hex, background, 4.5);
+        expect(getContrastRatio(adjusted, background)).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
+  it('builds accent CSS whose link/label colour passes AA in light and dark for every preset', () => {
+    for (const { hex } of ACCENT_PRESETS) {
+      const [light, dark] = buildAccentCss(hex).split('\n') as [string, string];
+      expect(getContrastRatio(accentText(light), '#ffffff')).toBeGreaterThanOrEqual(4.5);
+      expect(getContrastRatio(accentText(dark), '#16191f')).toBeGreaterThanOrEqual(4.5);
     }
   });
 });
