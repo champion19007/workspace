@@ -7,7 +7,11 @@ import { Mail } from 'lucide-react';
 import { AuthFrame, AuthFrameFallback } from '@/components/ui/auth-frame';
 
 function VerifyRequestContent() {
-  const email = useSearchParams().get('email') || '';
+  const searchParams = useSearchParams();
+  const email = searchParams.get('email') || '';
+  const devSignIn = new URLSearchParams({ token: 'valid-mock-token', email });
+  const returnTo = searchParams.get('returnTo');
+  if (returnTo) devSignIn.set('returnTo', returnTo);
 
   return (
     <AuthFrame
@@ -37,7 +41,7 @@ function VerifyRequestContent() {
         <div className="rounded-lg border border-dashed border-border-strong p-3 text-sm">
           <p className="mb-2 text-fg-muted">Local development uses mock sign-in, so no email is sent.</p>
           <a
-            href={`/api/auth/callback?token=valid-mock-token&email=${encodeURIComponent(email)}`}
+            href={`/api/auth/callback?${devSignIn}`}
             className="btn btn-secondary btn-sm w-full"
           >
             Sign in as {email || 'this user'}

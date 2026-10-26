@@ -3,13 +3,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
-import { Monitor, Moon, RotateCcw, Sun, type LucideIcon } from 'lucide-react';
+import { Monitor, Moon, RotateCcw, Sun, Video, type LucideIcon } from 'lucide-react';
 import type { ZoomIntegrationDTO, ZoomHostConsentDTO, ZoomHostConsentStatus } from '@workspace/core';
 import { useTheme, DEFAULT_ACCENT, type ThemePreference } from '@/components/theme-provider';
 import { useShell } from '@/components/shell/shell-context';
 import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/ui/page-header';
-import { ErrorState } from '@/components/ui/states';
+import { EmptyState, ErrorState } from '@/components/ui/states';
 import { ZoomIntegrationCard } from '@/components/integrations/zoom-card';
 import { ZoomHostDrawer } from '@/components/integrations/zoom-host-drawer';
 import { MyConsentCard } from '@/components/integrations/my-consent-card';
@@ -135,6 +135,7 @@ function AppearanceSettings() {
 
 function IntegrationSettings({ orgId, role }: { orgId: string; role: string }) {
   const [zoomIntegration, setZoomIntegration] = useState<ZoomIntegrationDTO | null>(null);
+  const [zoomAvailable, setZoomAvailable] = useState(true);
   const [zoomHosts, setZoomHosts] = useState<ZoomHostConsentDTO[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -148,6 +149,7 @@ function IntegrationSettings({ orgId, role }: { orgId: string; role: string }) {
       if (!res.ok) throw await failure(res, "Zoom settings couldn't be loaded.");
       const data = await res.json();
       setZoomIntegration(data.integration || null);
+      setZoomAvailable(data.available !== false);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -214,6 +216,12 @@ function IntegrationSettings({ orgId, role }: { orgId: string; role: string }) {
         </div>
       ) : loadError ? (
         <ErrorState title="Couldn't load Zoom settings" message={loadError} onRetry={fetchZoomIntegration} />
+      ) : !zoomAvailable ? (
+        <EmptyState
+          icon={Video}
+          title="Zoom import isn't available here yet"
+          description="Bringing in Zoom meetings needs services this deployment doesn't run yet. Projects, tasks, docs and teams work as usual."
+        />
       ) : (
         <ZoomIntegrationCard
           integration={zoomIntegration}
@@ -224,7 +232,7 @@ function IntegrationSettings({ orgId, role }: { orgId: string; role: string }) {
         />
       )}
 
-      <MyConsentCard orgId={orgId} />
+      {zoomAvailable && <MyConsentCard orgId={orgId} />}
 
       <ZoomHostDrawer
         isOpen={isHostDrawerOpen}

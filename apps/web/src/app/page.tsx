@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { ArrowRight, CheckCircle2, FolderKanban, Video } from 'lucide-react';
 import { BrandMark } from '@/components/ui/auth-frame';
 
@@ -20,7 +21,11 @@ const FEATURES = [
   },
 ];
 
-export default function HomePage() {
+export default async function HomePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  // Supabase falls back to the Site URL when the callback isn't in its redirect allow-list: finish sign-in anyway.
+  const { code } = await searchParams;
+  if (typeof code === 'string') redirect(`/api/auth/callback?code=${encodeURIComponent(code)}`);
+
   return (
     <div className="flex min-h-screen flex-col">
       <header className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-4 sm:px-6">

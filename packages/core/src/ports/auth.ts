@@ -47,9 +47,15 @@ export interface AuthTokens {
 
 export interface AuthPort {
   readonly provider: string;
-  requestPasswordless(input: PasswordlessRequestInput): Promise<{ messageId?: string; sent: boolean }>;
+  /**
+   * PKCE providers return codeVerifier from the email-link and OAuth starts: opaque state the caller keeps
+   * (httpOnly cookie) and passes back unchanged to exchangeOAuthCode when the provider redirects with ?code=.
+   */
+  requestPasswordless(
+    input: PasswordlessRequestInput
+  ): Promise<{ messageId?: string; sent: boolean; codeVerifier?: string }>;
   verifyPasswordless(input: PasswordlessVerifyInput): Promise<{ user: AuthUser; tokens: AuthTokens }>;
-  getOAuthUrl(input: OAuthUrlInput): Promise<{ url: string; state?: string }>;
+  getOAuthUrl(input: OAuthUrlInput): Promise<{ url: string; state?: string; codeVerifier?: string }>;
   exchangeOAuthCode(input: OAuthExchangeInput): Promise<{ user: AuthUser; tokens: AuthTokens }>;
   refreshSession(refreshToken: string): Promise<AuthTokens>;
   verifySessionToken(token: string): Promise<AuthSession | AuthUser>;

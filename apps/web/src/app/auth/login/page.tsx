@@ -47,13 +47,15 @@ function LoginForm() {
       const res = await fetch('/api/auth/magic-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, returnTo: returnTo || undefined }),
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "We couldn't send a sign-in link. Please try again.");
 
-      router.push(`/auth/verify-request?email=${encodeURIComponent(email)}`);
+      const next = new URLSearchParams({ email });
+      if (returnTo) next.set('returnTo', returnTo);
+      router.push(`/auth/verify-request?${next}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
     } finally {

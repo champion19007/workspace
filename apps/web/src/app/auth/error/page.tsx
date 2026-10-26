@@ -23,6 +23,10 @@ const REASON_MESSAGES: Record<string, { title: string; desc: string }> = {
     title: 'This sign-in link is incomplete',
     desc: 'Some of the link is missing. Open it straight from the email, or request a new one.',
   },
+  different_browser: {
+    title: 'Open the link in the same browser',
+    desc: 'For your security, a sign-in link only works in the browser where you asked for it. Request a new link here and open it in this browser.',
+  },
   oauth_init_failed: {
     title: "Google sign-in couldn't start",
     desc: 'Please try again, or use an email sign-in link instead.',

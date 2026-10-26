@@ -1,10 +1,12 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getServerContext } from '@/lib/server-context';
+import { PKCE_COOKIE_NAME, authCallbackUrl, getPkceCookieOptions } from '@/lib/session';
 
 const MagicLinkSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
-  redirectUrl: z.string().optional(),
+  // Where to land after signing in (e.g. an invitation). The link itself always comes back to this app.
+  returnTo: z.string().max(2048).optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -23,20 +25,18 @@ export async function POST(request: NextRequest) {
     }
 
     const { ports } = getServerContext();
-    const host = request.headers.get('host') || 'localhost:3000';
-    const protocol = request.headers.get('x-forwarded-proto') || 'http';
-    const callbackUrl = `${protocol}://${host}/api/auth/callback`;
-
-    await ports.auth.requestPasswordless({
+    const { codeVerifier } = await ports.auth.requestPasswordless({
       email: parsed.data.email,
-      redirectUrl: parsed.data.redirectUrl || callbackUrl,
+      redirectUrl: authCallbackUrl(request, parsed.data.returnTo),
     });
 
     // Generic response to prevent account enumeration
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       message: 'If an account exists with this email address, a secure sign-in link has been sent.',
     });
+    if (codeVerifier) response.cookies.set(PKCE_COOKIE_NAME, codeVerifier, getPkceCookieOptions());
+    return response;
   } catch (err) {
     console.error('Magic link request error:', err);
     return NextResponse.json(

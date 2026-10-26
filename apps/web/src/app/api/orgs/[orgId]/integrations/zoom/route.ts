@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { getServerContext } from '@/lib/server-context';
+import { getServerContext, isZoomAvailable } from '@/lib/server-context';
 import { SESSION_COOKIE_NAME, verifyAndRefreshSession } from '@/lib/session';
 import { resolveTenantForUser } from '@/lib/resolve-org';
 import {
@@ -24,12 +24,12 @@ export async function GET(
   }
 
   const { orgId: orgIdentifier } = await params;
-  const { db, sql } = getServerContext();
+  const { config, db, sql } = getServerContext();
 
   try {
     const tenant = await resolveTenantForUser(db, orgIdentifier, session.userId);
     const integration = await getZoomIntegration(sql, tenant.orgId, session.userId);
-    return NextResponse.json({ integration });
+    return NextResponse.json({ integration, available: isZoomAvailable(config) });
   } catch (err) {
     if (err instanceof DomainError) {
       return NextResponse.json({ error: err.code, message: err.message }, { status: err.status });
