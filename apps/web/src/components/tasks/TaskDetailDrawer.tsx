@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useId } from 'react';
+import { useShell } from '@/components/shell/shell-context';
 import { Drawer } from '@/components/ui/drawer';
 import { StatusBadge } from '@/components/ui/badge';
 import { Alert } from '@/components/ui/states';
@@ -44,6 +45,7 @@ export function TaskDetailDrawer({
   onTaskArchived,
 }: TaskDetailDrawerProps) {
   const ids = useId();
+  const { refreshProjects } = useShell();
   const [task, setTask] = useState<TaskDTO | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -186,6 +188,7 @@ export function TaskDetailDrawer({
       setConflictServerTask(null);
       setSuccessMessage('Saved');
       onTaskUpdated(data);
+      refreshProjects();
       setTimeout(() => setSuccessMessage(null), 2500);
     } catch (err) {
       setErrorMessage((err as Error).message || "Your changes couldn't be saved.");
@@ -225,6 +228,7 @@ export function TaskDetailDrawer({
       }
 
       if (onTaskArchived) onTaskArchived(task.id);
+      refreshProjects();
       onClose();
     } catch (err) {
       setErrorMessage((err as Error).message || "The task couldn't be archived.");

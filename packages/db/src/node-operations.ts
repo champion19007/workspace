@@ -5,9 +5,11 @@ import {
   ConflictError,
   PreconditionFailedError,
   generateUuidV7,
+  getKolkataTodayDateString,
+  type NodeRollupDTO,
 } from '@workspace/core';
 import { insertOutboxEvent } from './outbox-operations.js';
-import { markNodesDirty } from './rollup-operations.js';
+import { ensureFreshProjectRollup, markNodesDirty } from './rollup-operations.js';
 import { tenantSql, type DbOrSql } from './client.js';
 
 export type { DbOrSql };
@@ -451,6 +453,27 @@ export async function listProjects(
   `;
 
   const rows = await query;
+
+  // Health shown in lists (sidebar, Home, project header) must not lag behind task changes.
+  if (rows.length > 0) {
+    const ids = rows.map((r) => r.id as string);
+    const dirtyRows = await sql<{ nodeId: string; generation: number }[]>`
+      SELECT node_id AS "nodeId", dirty_generation AS "generation"
+      FROM node_rollup_dirty
+      WHERE org_id = ${orgId} AND node_id = ANY(${ids}::uuid[])
+    `;
+    const dirty = new Map(dirtyRows.map((d) => [d.nodeId, d.generation]));
+    const dateContext = getKolkataTodayDateString();
+    for (const r of rows) {
+      r.rollup = await ensureFreshProjectRollup(sql, {
+        orgId,
+        projectId: r.id,
+        cached: (r.rollup as NodeRollupDTO | null) ?? null,
+        dirtyGeneration: dirty.get(r.id) ?? null,
+        dateContext,
+      });
+    }
+  }
 
   const [countResult] = await sql`
     SELECT count(*)::int as total

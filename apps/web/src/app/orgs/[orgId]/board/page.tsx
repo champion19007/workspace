@@ -83,7 +83,7 @@ function CardMenu({
 export default function KanbanBoardPage() {
   const params = useParams();
   const searchParams = useSearchParams();
-  const { projects: shellProjects } = useShell();
+  const { projects: shellProjects, refreshProjects } = useShell();
 
   const orgId = params?.orgId as string;
   const paramProjectId = params?.projectId as string | undefined;
@@ -235,6 +235,7 @@ export default function KanbanBoardPage() {
 
       const authoritativeTask: TaskDTO = await res.json();
       setTasks((current) => current.map((t) => (t.id === authoritativeTask.id ? authoritativeTask : t)));
+      refreshProjects();
     } catch (err) {
       setTasks(previousTasks);
       setError(err instanceof Error ? err.message : String(err));

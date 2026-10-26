@@ -72,6 +72,7 @@ use `export NAME="value"` instead of `$env:NAME = "value"`.
    | `SUPABASE_URL` | **Project Settings → API**: Project URL |
    | `SUPABASE_ANON_KEY` | **Project Settings → API**: the public anon key (called the publishable key in newer projects) |
    | `ENABLE_EXPERIMENTAL_COREPACK` | `1` (builds with the pnpm version pinned in `package.json`) |
+   | `NEXT_PUBLIC_APP_TIME_ZONE` | Optional. Your team's time zone, for example `America/New_York` or `Europe/London`. It decides when a task counts as due today or overdue. Defaults to `Asia/Kolkata`. |
 
 4. Deploy.
 

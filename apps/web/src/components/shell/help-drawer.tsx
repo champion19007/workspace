@@ -5,6 +5,30 @@ import { Drawer } from '../ui/drawer';
 import { useShell } from './shell-context';
 import { ChevronDown } from 'lucide-react';
 
+// A two-minute tour of how the pieces fit, in the order a new workspace is usually set up.
+const GUIDE: { title: string; text: string }[] = [
+  {
+    title: 'Set up teams and projects',
+    text: 'An organization holds teams, and each team holds projects. Start in the General team, and add a team per client or department when you need one.',
+  },
+  {
+    title: 'Plan the work as tasks',
+    text: "Add tasks in a project's List with an owner, a priority and a due date. Break big tasks into subtasks.",
+  },
+  {
+    title: 'Track progress on the board',
+    text: 'Drag cards between To do, In progress and Done, or tick tasks off in the list. Mark a task Blocked when it is waiting on something.',
+  },
+  {
+    title: 'Keep notes in docs',
+    text: 'Write briefs, plans and notes in Markdown next to the project. Every save keeps a version you can restore.',
+  },
+  {
+    title: 'Watch what needs attention',
+    text: "My tasks lists everything assigned to you, soonest first. Insights shows which projects are at risk and what's overdue.",
+  },
+];
+
 const FAQS: { question: string; answer: string }[] = [
   {
     question: 'How do meeting notes get into Workspace?',
@@ -42,8 +66,48 @@ export function HelpDrawer() {
       isOpen={isHelpDrawerOpen}
       onClose={() => setIsHelpDrawerOpen(false)}
       title="Help"
-      description="Answers to common questions about Workspace."
+      description="A short guide to Workspace, and answers to common questions."
     >
+      <section aria-labelledby="help-guide-title" className="space-y-3">
+        <h3 id="help-guide-title" className="text-sm font-semibold text-fg">
+          How Workspace fits together
+        </h3>
+        <ol className="space-y-3">
+          {GUIDE.map((item, i) => (
+            <li key={item.title} className="flex gap-3">
+              <span
+                className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-subtle text-xs font-semibold text-accent-text"
+                aria-hidden="true"
+              >
+                {i + 1}
+              </span>
+              <div className="space-y-0.5">
+                <p className="text-sm font-medium text-fg">{item.title}</p>
+                <p className="text-sm leading-relaxed text-fg-muted">{item.text}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <section aria-labelledby="help-tips-title" className="space-y-2 rounded-lg bg-surface-2 p-3">
+        <h3 id="help-tips-title" className="text-sm font-semibold text-fg">
+          Tips
+        </h3>
+        <ul className="list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-fg-muted">
+          <li>
+            <span className="font-medium text-fg">Project managers:</span> open Insights before your weekly check-in. It lists
+            overdue and blocked work across every project.
+          </li>
+          <li>
+            <span className="font-medium text-fg">Freelancers:</span> make one team per client and one project per engagement, so
+            each client&apos;s tasks and docs stay together.
+          </li>
+          <li>Press Ctrl K (⌘K on a Mac) to jump to any project or page.</li>
+        </ul>
+      </section>
+
+      <h3 className="text-sm font-semibold text-fg">Common questions</h3>
       <div className="card divide-y divide-border overflow-hidden">
         {FAQS.map((faq, idx) => {
           const isOpen = openIndex === idx;

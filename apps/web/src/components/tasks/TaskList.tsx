@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useShell } from '@/components/shell/shell-context';
 import { Check, CornerDownRight, Search, X } from 'lucide-react';
 import { type TaskDTO, formatETag } from '@workspace/core';
 import { StatusBadge, PriorityBadge, TaskStatus } from '@/components/ui/badge';
@@ -174,6 +175,7 @@ export function TaskList({
   projectNames?: Record<string, string>;
 }) {
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const { refreshProjects } = useShell();
 
   const toggleDone = async (task: TaskDTO, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -191,6 +193,7 @@ export function TaskList({
         throw new Error(err.message || `${task.key} couldn't be updated.`);
       }
       onTaskUpdated(await res.json());
+      refreshProjects();
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
     } finally {

@@ -25,6 +25,7 @@ import type {
   TaskDTO,
   TaskPriority,
 } from '@workspace/core';
+import { APP_TIME_ZONE } from '@workspace/core';
 import { Dialog } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { formatShortDate } from '@/lib/format';
@@ -51,10 +52,10 @@ const inputClass = 'field';
 const secondaryButton = 'btn btn-secondary btn-sm';
 const primaryButton = 'btn btn-primary btn-sm';
 
-/** Meeting-relative times are shown in Asia/Kolkata. */
+/** Meeting times are shown in the deployment's time zone, the one due dates are resolved in. */
 function formatIst(iso: string | null | undefined): string {
   if (!iso) return 'time unknown';
-  return `${new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' })} IST`;
+  return new Date(iso).toLocaleString(undefined, { timeZone: APP_TIME_ZONE, dateStyle: 'medium', timeStyle: 'short', timeZoneName: 'short' });
 }
 
 const toPreview = (t: ActionItemTaskSummaryDTO): TargetPreview => ({

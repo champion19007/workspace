@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useId } from 'react';
+import { useShell } from '@/components/shell/shell-context';
 import { Dialog } from '@/components/ui/dialog';
 import { Alert } from '@/components/ui/states';
 import { type TaskDTO, type TaskLabelDTO, type TaskStatus, type TaskPriority } from '@workspace/core';
@@ -36,6 +37,7 @@ export function CreateTaskDialog({
   onTaskCreated,
 }: CreateTaskDialogProps) {
   const ids = useId();
+  const { refreshProjects } = useShell();
   const [targetProjectId, setTargetProjectId] = useState(projectId);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -127,6 +129,7 @@ export function CreateTaskDialog({
       }
 
       onTaskCreated(data);
+      refreshProjects();
       onClose();
     } catch (err) {
       setError((err as Error).message || "The task couldn't be created. Try again.");

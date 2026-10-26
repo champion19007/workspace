@@ -18,6 +18,7 @@ import {
   type PageInfo,
   type TaskDTO,
   type UpdateTaskInput,
+  APP_TIME_ZONE,
 } from '@workspace/core';
 import { tenantSql, withTenantContext } from './client.js';
 import { authorizeMeetingAccess } from './meeting-intake-operations.js';
@@ -336,7 +337,7 @@ export async function decideActionItem(sql: Sql, params: DecideActionItemParams)
     const [meeting] = await tx<any[]>`
       SELECT id, title, node_id, status, skipped, processing_generation, zoom_host_id,
              guests_present, guest_consent_status,
-             TO_CHAR(COALESCE(actual_start_at, scheduled_start_at, created_at) AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS meeting_date
+             TO_CHAR(COALESCE(actual_start_at, scheduled_start_at, created_at) AT TIME ZONE ${APP_TIME_ZONE}, 'YYYY-MM-DD') AS meeting_date
       FROM meetings
       WHERE org_id = ${orgId} AND id = ${meetingId}
       FOR SHARE

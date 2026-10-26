@@ -13,6 +13,9 @@ export interface ShellProject {
   health: HealthStatus | null;
   completionPercentage: number | null;
   overdueCount: number;
+  /** All tasks, and those already in progress or done (for the getting-started checklist). */
+  taskCount: number;
+  startedCount: number;
 }
 
 export interface ShellUser {
@@ -41,6 +44,8 @@ interface ShellContextType {
   refreshProjects: () => void;
   /** Open meeting suggestions that name the user ("25+" when more pages exist). null while loading. */
   inboxCount: string | null;
+  /** Whether this deployment can import Zoom meetings (false on a web-only deployment). null while loading. */
+  meetingsAvailable: boolean | null;
 }
 
 const ShellContext = createContext<ShellContextType | null>(null);
@@ -51,7 +56,12 @@ interface ProjectApiRow {
   description: string | null;
   teamName: string | null;
   visibility: 'public' | 'private';
-  rollup?: { health?: HealthStatus; completionPercentage?: number; overdueCount?: number } | null;
+  rollup?: {
+    health?: HealthStatus;
+    completionPercentage?: number;
+    overdueCount?: number;
+    tasks?: { total?: number; inProgress?: number; completed?: number };
+  } | null;
 }
 
 export function ShellProvider({
@@ -73,6 +83,7 @@ export function ShellProvider({
   const [projects, setProjects] = useState<ShellProject[] | null>(null);
   const [projectsError, setProjectsError] = useState(false);
   const [inboxCount, setInboxCount] = useState<string | null>(null);
+  const [meetingsAvailable, setMeetingsAvailable] = useState<boolean | null>(null);
 
   const refreshProjects = useCallback(() => {
     setProjectsError(false);
@@ -92,6 +103,8 @@ export function ShellProvider({
             health: p.rollup?.health ?? null,
             completionPercentage: p.rollup?.completionPercentage ?? null,
             overdueCount: p.rollup?.overdueCount ?? 0,
+            taskCount: p.rollup?.tasks?.total ?? 0,
+            startedCount: (p.rollup?.tasks?.inProgress ?? 0) + (p.rollup?.tasks?.completed ?? 0),
           }))
         )
       )
@@ -101,6 +114,14 @@ export function ShellProvider({
   useEffect(() => {
     if (orgId) refreshProjects();
   }, [orgId, refreshProjects]);
+
+  useEffect(() => {
+    if (!orgId) return;
+    fetch(`/api/orgs/${orgId}/integrations/zoom`)
+      .then((res) => (res.ok ? res.json() : {}))
+      .then((data: { available?: boolean }) => setMeetingsAvailable(data.available !== false))
+      .catch(() => setMeetingsAvailable(true));
+  }, [orgId]);
 
   // Re-count on navigation so approving suggestions elsewhere updates the sidebar badge.
   useEffect(() => {
@@ -188,6 +209,7 @@ export function ShellProvider({
         projectsError,
         refreshProjects,
         inboxCount,
+        meetingsAvailable,
       }}
     >
       {children}

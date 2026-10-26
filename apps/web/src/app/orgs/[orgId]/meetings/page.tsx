@@ -9,6 +9,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState, ErrorState, SkeletonRows } from '@/components/ui/states';
 import type { ZoomMeetingDTO } from '@workspace/core';
 import { readDeepLinkId } from '@/lib/deep-link';
+import { useShell } from '@/components/shell/shell-context';
 import { formatDateTime } from '@/lib/format';
 
 // Grouped the way people think about meetings, not by pipeline stage.
@@ -28,6 +29,7 @@ const FILTERS: { id: string; label: string; statuses?: string[] }[] = [
 export default function MeetingsPage() {
   const params = useParams();
   const orgId = params.orgId as string;
+  const { meetingsAvailable } = useShell();
 
   const [meetings, setMeetings] = useState<ZoomMeetingDTO[]>([]);
   const [loading, setLoading] = useState(true);
@@ -164,6 +166,12 @@ export default function MeetingsPage() {
               description={`Nothing matches “${debouncedSearch}”.`}
               action={{ label: 'Clear search', onClick: () => setSearchQuery('') }}
               compact
+            />
+          ) : meetingsAvailable === false ? (
+            <EmptyState
+              icon={Video}
+              title="Meeting import isn't set up"
+              description="This workspace doesn't bring in Zoom meetings yet. Projects, tasks and docs work as usual."
             />
           ) : (
             <EmptyState

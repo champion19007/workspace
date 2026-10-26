@@ -10,6 +10,22 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   serverExternalPackages: ['@workspace/core', '@workspace/adapters', '@workspace/db', 'postgres'],
   outputFileTracingRoot: path.resolve(__dirname, '../../'),
+  // Baseline browser protections: no framing by other sites (clickjacking), no MIME sniffing,
+  // no full URLs leaked to other origins, and no device APIs the app doesn't use.
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+          { key: 'Strict-Transport-Security', value: 'max-age=31536000' },
+        ],
+      },
+    ];
+  },
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.resolve = config.resolve || {};

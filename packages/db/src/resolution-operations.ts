@@ -1,6 +1,7 @@
 import {
   type LLMPort,
   type EvidenceSegmentDTO,
+  APP_TIME_ZONE,
 } from '@workspace/core';
 
 export interface ProjectMemberCandidate {
@@ -208,13 +209,13 @@ export interface KolkataDate {
 }
 
 /**
- * Computes meeting date components strictly in Asia/Kolkata (UTC+05:30).
+ * Computes meeting date components in the deployment's time zone (APP_TIME_ZONE, Asia/Kolkata by default).
  * Never uses server processing date or client browser local timezone.
  */
 export function getMeetingDateInKolkata(meetingTimestampIso: string): KolkataDate {
   const date = new Date(meetingTimestampIso);
   const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Kolkata',
+    timeZone: APP_TIME_ZONE,
     year: 'numeric',
     month: 'numeric',
     day: 'numeric',
@@ -285,7 +286,7 @@ const WEEKDAY_NAMES: Record<string, number> = {
 };
 
 /**
- * Resolves due date from spoken due phrase relative to the meeting start date in Asia/Kolkata.
+ * Resolves due date from spoken due phrase relative to the meeting start date in the deployment's time zone.
  * Calendar policy:
  * - Ambiguous phrases ("soon", "asap", "tbd") are left null with status='ambiguous'.
  * - "today", "tomorrow", relative day counts ("in 3 days", "in 2 weeks").
@@ -330,7 +331,7 @@ export function resolveActionItemDueDate(params: ResolveDueDateParams): ResolveD
     return {
       suggestedDue: ref.dateStr,
       status: 'resolved',
-      explanation: `Today in Asia/Kolkata (${ref.dateStr})`,
+      explanation: `Today in ${APP_TIME_ZONE} (${ref.dateStr})`,
     };
   }
 
@@ -340,7 +341,7 @@ export function resolveActionItemDueDate(params: ResolveDueDateParams): ResolveD
     return {
       suggestedDue: due,
       status: 'resolved',
-      explanation: `Tomorrow in Asia/Kolkata (${due})`,
+      explanation: `Tomorrow in ${APP_TIME_ZONE} (${due})`,
     };
   }
 
@@ -352,7 +353,7 @@ export function resolveActionItemDueDate(params: ResolveDueDateParams): ResolveD
     return {
       suggestedDue: due,
       status: 'resolved',
-      explanation: `In ${days} days from meeting date in Asia/Kolkata (${due})`,
+      explanation: `In ${days} days from meeting date in ${APP_TIME_ZONE} (${due})`,
     };
   }
 
@@ -362,7 +363,7 @@ export function resolveActionItemDueDate(params: ResolveDueDateParams): ResolveD
     return {
       suggestedDue: due,
       status: 'resolved',
-      explanation: `In 1 week from meeting date in Asia/Kolkata (${due})`,
+      explanation: `In 1 week from meeting date in ${APP_TIME_ZONE} (${due})`,
     };
   }
   const inWeeksMatch = clean.match(/\bin\s+(\d+)\s+weeks?\b/i);
@@ -372,7 +373,7 @@ export function resolveActionItemDueDate(params: ResolveDueDateParams): ResolveD
     return {
       suggestedDue: due,
       status: 'resolved',
-      explanation: `In ${weeks} weeks from meeting date in Asia/Kolkata (${due})`,
+      explanation: `In ${weeks} weeks from meeting date in ${APP_TIME_ZONE} (${due})`,
     };
   }
 
@@ -388,7 +389,7 @@ export function resolveActionItemDueDate(params: ResolveDueDateParams): ResolveD
       return {
         suggestedDue: due,
         status: 'resolved',
-        explanation: `${duePhrase} in Asia/Kolkata (+${diff} days -> ${due})`,
+        explanation: `${duePhrase} in ${APP_TIME_ZONE} (+${diff} days -> ${due})`,
       };
     }
   }

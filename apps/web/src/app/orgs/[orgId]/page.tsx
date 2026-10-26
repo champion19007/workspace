@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ArrowRight, CircleCheck, FolderKanban, Inbox, Video } from 'lucide-react';
 import type { ActionItemDTO, MyTaskItemDTO, MyTasksCountsDTO, ZoomMeetingDTO } from '@workspace/core';
 import { useShell } from '@/components/shell/shell-context';
+import { GettingStarted } from '@/components/home/getting-started';
 import { displayNameFromEmail } from '@/components/shell/account-menu';
 import { HEALTH_META, MeetingStatusBadge, StatusBadge } from '@/components/ui/badge';
 import { EmptyState, ErrorState } from '@/components/ui/states';
@@ -68,7 +69,7 @@ function Stat({ href, label, value, tone }: { href: string; label: string; value
 }
 
 export default function HomePage() {
-  const { orgId, user, projects, projectsError, refreshProjects } = useShell();
+  const { orgId, user, projects, projectsError, refreshProjects, meetingsAvailable } = useShell();
   const base = `/orgs/${orgId}`;
 
   const [mine, setMine] = useState<{ tasks: MyTaskItemDTO[]; counts: MyTasksCountsDTO } | null>(null);
@@ -177,6 +178,8 @@ export default function HomePage() {
         )}
       </header>
 
+      <GettingStarted />
+
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           <Section title="My tasks" icon={CircleCheck} action={<SectionLink href={`${base}/my-tasks`}>View all</SectionLink>}>
@@ -247,7 +250,7 @@ export default function HomePage() {
                 <EmptyState
                   icon={FolderKanban}
                   title="No projects yet"
-                  description="Projects hold tasks, docs and meeting notes. Create one under a team."
+                  description="Projects hold your tasks, board and docs. Create one to start planning."
                   action={{ label: 'Create a project', href: `${base}/projects?new=1`, primary: true }}
                   compact
                 />
@@ -330,13 +333,22 @@ export default function HomePage() {
               <RowsSkeleton rows={3} />
             ) : meetings.length === 0 ? (
               <div className="p-4">
-                <EmptyState
-                  icon={Video}
-                  title="No meetings yet"
-                  description="Connect Zoom in Settings and recorded meetings will arrive here with notes."
-                  action={{ label: 'Open settings', href: `${base}/settings` }}
-                  compact
-                />
+                {meetingsAvailable === false ? (
+                  <EmptyState
+                    icon={Video}
+                    title="Meeting import isn't set up"
+                    description="This workspace doesn't bring in Zoom meetings yet. Projects, tasks and docs work as usual."
+                    compact
+                  />
+                ) : (
+                  <EmptyState
+                    icon={Video}
+                    title="No meetings yet"
+                    description="Connect Zoom in Settings and recorded meetings will arrive here with notes."
+                    action={{ label: 'Open settings', href: `${base}/settings` }}
+                    compact
+                  />
+                )}
               </div>
             ) : (
               <ul className="divide-y divide-border">
