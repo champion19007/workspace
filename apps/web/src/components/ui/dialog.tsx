@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useId, useRef } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 const FOCUSABLE =
@@ -53,8 +54,12 @@ export function Dialog({
     onCloseRef.current = onClose;
   });
 
+  // Rendered into <body> so a parent's layout (space-y margins, transforms) can't shift the fixed overlay.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && mounted) {
       previouslyFocusedElement.current = document.activeElement as HTMLElement;
       const firstFocusable = dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE);
       firstFocusable?.focus();
@@ -80,11 +85,11 @@ export function Dialog({
         previouslyFocusedElement.current?.focus();
       };
     }
-  }, [isOpen]);
+  }, [isOpen, mounted]);
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
-  return (
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
@@ -117,6 +122,7 @@ export function Dialog({
 
         <div className="px-5 pb-5 pt-2">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

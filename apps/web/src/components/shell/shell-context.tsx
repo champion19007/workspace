@@ -36,6 +36,8 @@ interface ShellContextType {
   setIsMobileSidebarOpen: (open: boolean) => void;
   /** Projects the user can see, for the sidebar, breadcrumbs and project header. null while loading. */
   projects: ShellProject[] | null;
+  /** The last project load failed; with projects still null, show an error instead of "no projects". */
+  projectsError: boolean;
   refreshProjects: () => void;
   /** Open meeting suggestions that name the user ("25+" when more pages exist). null while loading. */
   inboxCount: string | null;
@@ -69,11 +71,16 @@ export function ShellProvider({
   const [isCommandLauncherOpen, setIsCommandLauncherOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [projects, setProjects] = useState<ShellProject[] | null>(null);
+  const [projectsError, setProjectsError] = useState(false);
   const [inboxCount, setInboxCount] = useState<string | null>(null);
 
   const refreshProjects = useCallback(() => {
+    setProjectsError(false);
     fetch(`/api/orgs/${orgId}/projects?limit=100`)
-      .then((res) => (res.ok ? res.json() : { projects: [] }))
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
       .then((data: { projects?: ProjectApiRow[] }) =>
         setProjects(
           (data.projects ?? []).map((p) => ({
@@ -88,7 +95,7 @@ export function ShellProvider({
           }))
         )
       )
-      .catch(() => setProjects([]));
+      .catch(() => setProjectsError(true));
   }, [orgId]);
 
   useEffect(() => {
@@ -178,6 +185,7 @@ export function ShellProvider({
         isMobileSidebarOpen,
         setIsMobileSidebarOpen,
         projects,
+        projectsError,
         refreshProjects,
         inboxCount,
       }}

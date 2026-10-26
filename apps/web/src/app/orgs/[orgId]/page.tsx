@@ -68,7 +68,7 @@ function Stat({ href, label, value, tone }: { href: string; label: string; value
 }
 
 export default function HomePage() {
-  const { orgId, user, projects } = useShell();
+  const { orgId, user, projects, projectsError, refreshProjects } = useShell();
   const base = `/orgs/${orgId}`;
 
   const [mine, setMine] = useState<{ tasks: MyTaskItemDTO[]; counts: MyTasksCountsDTO } | null>(null);
@@ -236,7 +236,11 @@ export default function HomePage() {
           </Section>
 
           <Section title="Projects" icon={FolderKanban} action={<SectionLink href={`${base}/projects`}>All projects</SectionLink>}>
-            {projects === null ? (
+            {projects === null && projectsError ? (
+              <div className="p-4">
+                <ErrorState title="Couldn't load projects" onRetry={refreshProjects} compact />
+              </div>
+            ) : projects === null ? (
               <RowsSkeleton rows={3} />
             ) : projects.length === 0 ? (
               <div className="p-4">

@@ -144,6 +144,8 @@ export function Sidebar({ currentOrg, availableOrgs = [], user }: SidebarProps) 
   const {
     orgId,
     projects,
+    projectsError,
+    refreshProjects,
     inboxCount,
     setIsCommandLauncherOpen,
     setIsHelpDrawerOpen,
@@ -223,7 +225,14 @@ export function Sidebar({ currentOrg, availableOrgs = [], user }: SidebarProps) 
               <Plus className="h-3.5 w-3.5" aria-hidden="true" />
             </Link>
           </div>
-          {visibleProjects === null ? (
+          {visibleProjects === null && projectsError ? (
+            <p className="flex items-center justify-between gap-2 px-2.5 py-1 text-xs text-fg-muted">
+              Couldn&apos;t load projects
+              <button type="button" onClick={refreshProjects} className="link">
+                Retry
+              </button>
+            </p>
+          ) : visibleProjects === null ? (
             <div className="space-y-2 px-2.5 py-1" aria-hidden="true">
               <div className="skeleton h-3.5 w-36" />
               <div className="skeleton h-3.5 w-28" />

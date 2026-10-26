@@ -83,7 +83,7 @@ function AppearanceSettings() {
                 onChange={() => setAccentColor(preset.hex)}
                 className="sr-only"
               />
-              <span className="h-4 w-4 shrink-0 rounded-full ring-1 ring-inset ring-black/15" style={{ backgroundColor: preset.hex }} aria-hidden="true" />
+              <span className="h-4 w-4 shrink-0 rounded-full ring-1 ring-inset ring-fg/20" style={{ backgroundColor: preset.hex }} aria-hidden="true" />
               {preset.name}
             </label>
           ))}

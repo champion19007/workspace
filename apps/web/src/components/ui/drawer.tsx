@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useId, useRef } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { trapTabKey } from './dialog';
 
@@ -33,9 +34,12 @@ export function Drawer({
   useEffect(() => {
     onCloseRef.current = onClose;
   });
+  // Rendered into <body> so a parent's layout (space-y margins, transforms) can't shift the fixed overlay.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && mounted) {
       previouslyFocusedElement.current = document.activeElement as HTMLElement;
       // Focus drawer on open
       const firstFocusable = drawerRef.current?.querySelector<HTMLElement>(
@@ -60,11 +64,11 @@ export function Drawer({
         previouslyFocusedElement.current?.focus();
       };
     }
-  }, [isOpen]);
+  }, [isOpen, mounted]);
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
-  return (
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
@@ -98,6 +102,7 @@ export function Drawer({
         <div className="flex-1 space-y-5 overflow-y-auto p-5">{children}</div>
         {footer && <div className="flex items-center gap-2 border-t border-border bg-surface px-5 py-3">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

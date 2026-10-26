@@ -13,7 +13,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   const pathname = usePathname();
   const orgId = params?.orgId as string;
   const projectId = params?.projectId as string;
-  const { projects } = useShell();
+  const { projects, projectsError } = useShell();
   const project = projects?.find((p) => p.id === projectId);
 
   const base = `/orgs/${orgId}/projects/${projectId}`;
@@ -48,7 +48,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
                 </p>
               )}
             </>
-          ) : projects === null ? (
+          ) : projects === null && !projectsError ? (
             <div className="space-y-2 py-1" aria-hidden="true">
               <div className="skeleton h-6 w-56" />
               <div className="skeleton h-4 w-80 max-w-full" />
