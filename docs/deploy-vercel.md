@@ -8,8 +8,8 @@ What this setup does not include:
 
 - **Zoom meeting import and AI notes.** They need the API and worker services (`apps/api`, `apps/worker`),
   a job queue and a secret store, which don't run on Vercel. Settings shows a note instead of a Connect button.
-- **Inviting teammates from the web app.** It isn't built yet. Each person can sign up and create their own
-  organization.
+- **Invitation emails.** You can invite teammates from **People**, but the app doesn't send the email: it
+  gives you the invitation link to send yourself.
 
 You need a GitHub repository with this code, a [Vercel](https://vercel.com) account and a
 [Supabase](https://supabase.com) account. Commands below are for PowerShell on Windows; on macOS or Linux
@@ -78,7 +78,9 @@ use `export NAME="value"` instead of `$env:NAME = "value"`.
 ## 5. Check it works
 
 1. Open your site, sign in with your email and create your organization.
-2. If pages fail to load, open the deployment's logs in Vercel. A message starting with
+2. Invite a teammate: **People → Invite people**, enter their email and copy the link. When they open it and
+   sign in with that email address, they join your organization. The link works once and expires in 7 days.
+3. If pages fail to load, open the deployment's logs in Vercel. A message starting with
    *Production configuration is incomplete* lists exactly which variables are missing or wrong. The app
    refuses to run without real sign-in and its own session secret, so it can't be deployed in an unsafe state.
 
