@@ -46,7 +46,7 @@ const SPEAKER_LINE = /^([\p{L}][\p{L}\p{M} .'-]{0,39}):\s+(.+)$/u;
 
 /** Numbered lines from a WebVTT file or plain text, with "Name: words" read as a speaker. */
 export function transcriptToLines(transcript: string): TranscriptLine[] {
-  if (/^﻿?WEBVTT/.test(transcript.trimStart())) {
+  if (/^WEBVTT/.test(transcript.trimStart())) {
     return parseWebVtt(transcript).map((cue, i) => ({ seq: i + 1, speakerLabel: cue.speakerLabel || null, text: cue.text }));
   }
   return transcript
