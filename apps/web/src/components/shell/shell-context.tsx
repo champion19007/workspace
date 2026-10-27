@@ -56,7 +56,7 @@ const ShellContext = createContext<ShellContextType | null>(null);
  */
 export function isProgressViewPath(pathname: string, orgId: string): boolean {
   const rest = pathname.slice(`/orgs/${orgId}`.length);
-  return rest === '/progress' || rest === '/profile' || /^\/projects\/[^/]+\/(dashboard|docs|files)(\/|$)/.test(rest);
+  return rest === '/progress' || rest === '/profile' || rest === '/chat' || /^\/projects\/[^/]+\/(dashboard|docs|files)(\/|$)/.test(rest);
 }
 
 interface ProjectApiRow {

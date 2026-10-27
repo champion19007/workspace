@@ -25,6 +25,7 @@ import {
   CircleHelp,
   CornerDownLeft,
   Gauge,
+  Sparkles,
 } from 'lucide-react';
 import { isReadOnlyRole } from '@workspace/core';
 
@@ -63,11 +64,15 @@ export function CommandLauncher() {
     const readOnly = isReadOnlyRole(user?.role);
     return [
       ...(readOnly
-        ? [{ id: 'progress', title: 'Progress', group: 'Go to' as const, icon: icon(Gauge), keywords: 'status health', action: go('/progress') }]
+        ? [
+            { id: 'progress', title: 'Progress', group: 'Go to' as const, icon: icon(Gauge), keywords: 'status health', action: go('/progress') },
+            { id: 'ask-ai', title: 'Ask AI', group: 'Go to' as const, icon: icon(Sparkles), keywords: 'question answer', action: go('/chat') },
+          ]
         : ([
           { id: 'home', title: 'Home', group: 'Go to', icon: icon(Home), keywords: 'dashboard overview', action: go('') },
           { id: 'my-tasks', title: 'My tasks', group: 'Go to', icon: icon(CircleCheck), keywords: 'assigned due', action: go('/my-tasks') },
-          { id: 'inbox', title: 'Inbox', group: 'Go to', icon: icon(Inbox), keywords: 'approvals suggestions', action: go('/inbox') },
+          { id: 'inbox', title: 'Inbox', group: 'Go to', icon: icon(Inbox), keywords: 'approvals suggestions requests', action: go('/inbox') },
+          { id: 'ask-ai', title: 'Ask AI', group: 'Go to', icon: icon(Sparkles), keywords: 'question answer', action: go('/chat') },
           { id: 'projects', title: 'Projects', group: 'Go to', icon: icon(FolderKanban), action: go('/projects') },
           { id: 'tasks', title: 'All tasks', group: 'Go to', icon: icon(ListTodo), keywords: 'list', action: go('/tasks') },
           { id: 'docs', title: 'Docs', group: 'Go to', icon: icon(FileText), keywords: 'documents', action: go('/docs') },

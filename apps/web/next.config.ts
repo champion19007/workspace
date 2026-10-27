@@ -8,7 +8,7 @@ const __dirname = path.dirname(__filename);
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  serverExternalPackages: ['@workspace/core', '@workspace/adapters', '@workspace/db', 'postgres'],
+  serverExternalPackages: ['@workspace/core', '@workspace/adapters', '@workspace/db', '@workspace/prompts', 'postgres'],
   outputFileTracingRoot: path.resolve(__dirname, '../../'),
   // Baseline browser protections: no framing by other sites (clickjacking), no MIME sniffing,
   // no full URLs leaked to other origins, and no device APIs the app doesn't use.

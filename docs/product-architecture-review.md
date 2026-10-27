@@ -24,18 +24,25 @@ an organization, and Owners and Managers invite people from People at one of fiv
 Executives and Clients are locked to the Progress view: any other page sends them back to it, and the sidebar,
 search and project tabs only offer what they can open. The real enforcement is on the server: every change is
 refused for both levels, and for clients the database itself (row-level security, migration `0016`) hides other
-projects, their tasks, docs and activity, plus meetings, comments and the member list. A level changes only when an
+projects, their tasks, docs and activity, plus meetings, task comments and the member list. A level changes only when an
 Owner or Manager changes it on People. The server reads the level on every request, so a change applies at once,
 and the person's screens follow on their next page load.
 
-What they will miss, most important first:
+Added since this review (migrations `0017`–`0020`): comments with @mentions on tasks, docs and each project's
+Discussion (executives and clients can comment on projects and docs); an in-app notification bell; project files and
+task attachments; Calendar and Timeline tabs with task start dates; public request forms that feed the Inbox; and AI
+helpers (notes from a pasted transcript, a plain-words summary on Progress, and Ask AI with cited sources).
 
-1. **Invitation emails.** Inviting works, but the app gives you the link to send yourself.
-2. **Comments and @mentions on tasks.** Discussion has to happen elsewhere.
-3. **Notifications and reminders.** Nothing emails people about assignments or due dates.
-4. **File attachments** on tasks and docs.
-5. **Timeline or calendar views** for planning by date.
-6. **Time tracking and invoicing**, which many freelancers expect.
+What they will still miss, most important first:
+
+1. **Emails.** Invitations, notifications and replies to request-form senders all stay inside the app: the app
+   gives you links to send yourself.
+2. **Who hears about a comment.** `commentRecipients()` in `packages/core/src/comments/index.ts` decides it and
+   is still a placeholder, so comments notify no one yet (mentions included).
+3. **Reminders** before due dates.
+4. **Bigger files.** Uploads pass through the web server, so the limit is 4 MB per file (Vercel's request body
+   limit). Signed direct-to-storage uploads would lift it.
+5. **Time tracking and invoicing**, which many freelancers expect.
 
 ## Fixed in this pass
 
@@ -68,8 +75,10 @@ What they will miss, most important first:
 4. **No live updates.** Other people's changes appear on reload. Conflicting edits are caught by version checks
    and a "keep mine / use theirs" prompt, so nothing is lost, but teams would benefit from polling or Supabase
    Realtime on the board and task lists.
-5. **No rate limiting on the API.** Sign-in emails rely on Supabase's limits; other routes have none. Add Vercel
-   firewall rules or a small rate limiter in middleware before a public launch.
+5. **No rate limiting on the API.** Sign-in emails rely on Supabase's limits; other routes have none. The public
+   request form has a honeypot and a per-server-instance limit, which slows a single bot but not a determined one.
+   Add Vercel firewall rules or a shared rate limiter before a public launch. The AI routes have no per-organization
+   spending cap yet (the summary is reused for an hour per person).
 6. **The rollup repair logic exists three times** (`getPermissionSafeRollup`, `getLeadershipSummary` and the new
    `ensureFreshProjectRollup`). Move the first two onto the helper.
 7. **Doc list previews show raw Markdown** (`- [ ]`, table pipes) because the excerpt is cut from the source text

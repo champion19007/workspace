@@ -50,6 +50,7 @@ function useCrumbs(): Crumb[] {
     return [parent, { label: name }];
   }
   if (section === 'docs') return [{ label: 'Docs', href: `${base}/docs` }, { label: 'Document' }];
+  if (section === 'meetings') return [{ label: 'Meetings', href: `${base}/meetings` }, { label: 'Notes from a transcript' }];
   if (section === 'settings') return [{ label: 'Settings', href: `${base}/settings` }, { label: 'Integrations' }];
   return [{ label: sectionLabel }];
 }

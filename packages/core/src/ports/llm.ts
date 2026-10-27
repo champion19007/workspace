@@ -6,7 +6,8 @@ export type PromptId =
   | 'resolve.speakers'
   | 'resolve.owner_and_due'
   | 'ask_ai.rewrite'
-  | 'ask_ai.answer';
+  | 'ask_ai.answer'
+  | 'summarize.progress';
 
 export type ModelTier = 'fast' | 'strong';
 

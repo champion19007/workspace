@@ -21,6 +21,7 @@ import {
   Plus,
   X,
   Gauge,
+  Sparkles,
   type LucideIcon,
 } from 'lucide-react';
 import { isReadOnlyRole } from '@workspace/core';
@@ -201,6 +202,7 @@ export function Sidebar({ currentOrg, availableOrgs = [], user }: SidebarProps) 
         {readOnly ? (
           <div className="space-y-0.5">
             <NavItem href={`${base}/progress`} icon={Gauge} label="Progress" active={isActive('/progress')} />
+            <NavItem href={`${base}/chat`} icon={Sparkles} label="Ask AI" active={isActive('/chat')} />
           </div>
         ) : (
           <div className="space-y-0.5">
@@ -220,6 +222,7 @@ export function Sidebar({ currentOrg, availableOrgs = [], user }: SidebarProps) 
                 ) : null
               }
             />
+            <NavItem href={`${base}/chat`} icon={Sparkles} label="Ask AI" active={isActive('/chat')} />
           </div>
         )}
 

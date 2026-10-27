@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { Video, Search, RotateCw, ChevronRight, SearchX } from 'lucide-react';
+import { Video, Search, RotateCw, ChevronRight, SearchX, Sparkles } from 'lucide-react';
 import { MeetingDetailDrawer } from '@/components/meetings/MeetingDetailDrawer';
 import { MeetingStatusBadge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/ui/page-header';
@@ -113,18 +114,24 @@ export default function MeetingsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Meetings"
-        description="Recorded Zoom meetings, their notes and the action items they suggest."
+        description="Recorded Zoom meetings, their notes and the action items they suggest. For other meetings, paste a transcript."
         actions={
-          <button
-            type="button"
-            onClick={() => fetchMeetings()}
-            disabled={loading}
-            className="btn btn-secondary btn-icon"
-            aria-label="Reload meetings"
-            title="Reload meetings"
-          >
-            <RotateCw className={loading ? 'animate-spin' : ''} aria-hidden="true" />
-          </button>
+          <>
+            <Link href={`/orgs/${orgId}/meetings/notes`} className="btn btn-primary">
+              <Sparkles aria-hidden="true" />
+              Notes from a transcript
+            </Link>
+            <button
+              type="button"
+              onClick={() => fetchMeetings()}
+              disabled={loading}
+              className="btn btn-secondary btn-icon"
+              aria-label="Reload meetings"
+              title="Reload meetings"
+            >
+              <RotateCw className={loading ? 'animate-spin' : ''} aria-hidden="true" />
+            </button>
+          </>
         }
       />
 

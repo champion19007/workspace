@@ -1,13 +1,15 @@
 # Deploy the web app to Vercel
 
 This puts the Workspace web app online so anyone can sign up, create an organization and use projects,
-tasks, the board, docs, teams and the inbox. Sign-in uses Supabase (email links, and optionally Google).
-The database is Supabase Postgres.
+tasks, the board, calendar and timeline, docs, files, comments, request forms, the inbox and the AI helpers
+(notes from a pasted transcript, the Progress summary and Ask AI). Sign-in uses Supabase (email links, and
+optionally Google). The database and file storage are Supabase.
 
 What this setup does not include:
 
-- **Zoom meeting import and AI notes.** They need the API and worker services (`apps/api`, `apps/worker`),
-  a job queue and a secret store, which don't run on Vercel. Settings shows a note instead of a Connect button.
+- **Zoom meeting import.** It needs the API and worker services (`apps/api`, `apps/worker`), a job queue and
+  a secret store, which don't run on Vercel. Settings shows a note instead of a Connect button. Notes from a
+  pasted transcript work without it.
 - **Invitation emails.** You can invite teammates from **People**, but the app doesn't send the email: it
   gives you the invitation link to send yourself.
 
@@ -34,7 +36,8 @@ use `export NAME="value"` instead of `$env:NAME = "value"`.
    ```
 
    The migrations create the tables, row-level security and a restricted login, `workspace_api`, that the
-   app uses at runtime.
+   app uses at runtime. **Run this step again after every update** that adds a migration (for example
+   `0017`–`0020` for comments, files, request forms and the Progress summary); it only applies the new ones.
 3. In the Supabase **SQL Editor**, give that login a password (any long random string; you'll need it in step 4):
 
    ```sql
@@ -43,6 +46,9 @@ use `export NAME="value"` instead of `$env:NAME = "value"`.
 
 4. Turn off the Data API (**Project Settings → Data API**). The app talks to Postgres directly, and this keeps
    your tables off Supabase's public REST endpoint.
+5. For files, create a storage bucket: **Storage → New bucket**, name it `workspace-attachments`, and leave
+   **Public bucket** off. The app reads and writes it with the service role key (step 4); people only reach
+   files through the app, which checks who can see each one.
 
 ## 3. Set up sign-in
 
@@ -73,6 +79,10 @@ use `export NAME="value"` instead of `$env:NAME = "value"`.
    | `SUPABASE_ANON_KEY` | **Project Settings → API**: the public anon key (called the publishable key in newer projects) |
    | `ENABLE_EXPERIMENTAL_COREPACK` | `1` (builds with the pnpm version pinned in `package.json`) |
    | `NEXT_PUBLIC_APP_TIME_ZONE` | Optional. Your team's time zone, for example `America/New_York` or `Europe/London`. It decides when a task counts as due today or overdue. Defaults to `Asia/Kolkata`. |
+   | `STORAGE_PROVIDER` | `supabase`, for files. Without it, uploads are refused instead of being lost. |
+   | `SUPABASE_SERVICE_ROLE_KEY` | **Project Settings → API**: the service role (secret) key. Server only: never put it in a `NEXT_PUBLIC_` variable. |
+   | `LLM_PROVIDER` | `anthropic`, to turn on the AI helpers. Without it they answer "AI isn't set up". |
+   | `ANTHROPIC_API_KEY` | An API key from [console.anthropic.com](https://console.anthropic.com). Notes use Claude Sonnet 5; Ask AI and summaries use Claude Haiku 4.5. |
 
 4. Deploy.
 

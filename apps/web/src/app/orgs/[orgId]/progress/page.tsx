@@ -8,6 +8,7 @@ import { Badge, HealthBadge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState, ErrorState, SkeletonCards } from '@/components/ui/states';
 import { useShell } from '@/components/shell/shell-context';
+import { ProgressSummaryCard } from '@/components/ai/ProgressSummaryCard';
 import { dueLabel } from '@/lib/format';
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -76,6 +77,8 @@ export default function ProgressPage() {
         />
       ) : (
         <>
+          <ProgressSummaryCard orgId={orgId} />
+
           <section aria-label="Summary" className="card p-5">
             <p className="text-lg font-semibold text-fg">
               {totalTasks ? `${Math.round((doneTasks / totalTasks) * 100)}% of the work is done` : 'No work planned yet'}

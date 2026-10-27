@@ -13,4 +13,5 @@ export * from './docs/index.js';
 export * from './comments/index.js';
 export * from './files/index.js';
 export * from './requests/index.js';
+export * from './ai/index.js';
 export * from './zoom/index.js';

@@ -13,6 +13,7 @@
     "@workspace/adapters": "workspace:*",
     "@workspace/core": "workspace:*",
     "@workspace/db": "workspace:*",
+    "@workspace/prompts": "workspace:*",
     "clsx": "^2.1.1",
     "lucide-react": "^1.16.0",
     "next": "^15.1.7",

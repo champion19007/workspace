@@ -1,5 +1,6 @@
 import { parseConfig, type AppConfig, type AppPorts } from '@workspace/core';
-import { createAppPorts } from '@workspace/adapters';
+import { createAppPorts, MockLlmAdapter } from '@workspace/adapters';
+import { demoLlm } from './demo-ai';
 import { createApiClient, type DatabaseInstance, type Sql } from '@workspace/db';
 
 let cachedConfig: AppConfig | null = null;
@@ -71,7 +72,10 @@ export function getServerContext(): {
   }
 
   if (!cachedPorts) {
-    cachedPorts = shared.__workspacePorts ??= createAppPorts(cachedConfig);
+    const ports = createAppPorts(cachedConfig);
+    // Without an AI key, development gets demo answers so the AI screens can be tried; production gets a 503 (lib/ai.ts).
+    const demo = ports.llm.provider === 'mock' && process.env.NODE_ENV !== 'production';
+    cachedPorts = shared.__workspacePorts ??= demo ? { ...ports, llm: new MockLlmAdapter(demoLlm) } : ports;
   }
 
   if (!cachedDb || !cachedSql) {

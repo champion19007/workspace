@@ -108,6 +108,8 @@ export interface ModelPricing {
 }
 
 export const MODEL_PRICING_TABLE: Record<string, ModelPricing> = {
+  'claude-sonnet-5': { inputUsdPerMillion: 2.0, outputUsdPerMillion: 10.0 },
+  'claude-haiku-4-5': { inputUsdPerMillion: 1.0, outputUsdPerMillion: 5.0 },
   'claude-3-7-sonnet-latest': { inputUsdPerMillion: 3.0, outputUsdPerMillion: 15.0 },
   'claude-3-5-sonnet-latest': { inputUsdPerMillion: 3.0, outputUsdPerMillion: 15.0 },
   'claude-3-5-sonnet-20241022': { inputUsdPerMillion: 3.0, outputUsdPerMillion: 15.0 },
@@ -136,6 +138,9 @@ export function calculateModelCostInr(
   return { costInr, estimated };
 }
 
+/** Models that still accept `temperature` (on the API version this SDK sends). */
+const SAMPLING_MODELS = new Set(['claude-haiku-4-5']);
+
 export class AnthropicLlmAdapter implements LLMPort {
   public readonly provider = 'anthropic';
   private client: Anthropic | null = null;
@@ -151,9 +156,10 @@ export class AnthropicLlmAdapter implements LLMPort {
         'Missing ANTHROPIC_API_KEY environment variable.'
       );
     }
-    this.fastModel = config.fastModel || 'claude-3-5-haiku-latest';
-    this.strongModel = config.strongModel || 'claude-3-7-sonnet-latest';
-    this.timeoutMs = config.timeoutMs || 30_000;
+    // The tiers named in docs/roadmap-25-stages.md (the Claude 3.5 Haiku and 3.7 Sonnet aliases were retired).
+    this.fastModel = config.fastModel || 'claude-haiku-4-5';
+    this.strongModel = config.strongModel || 'claude-sonnet-5';
+    this.timeoutMs = config.timeoutMs || 60_000;
   }
 
   private getClient(): Anthropic {
@@ -202,8 +208,10 @@ export class AnthropicLlmAdapter implements LLMPort {
       try {
         response = await client.messages.create({
           model,
-          max_tokens: 4096,
-          temperature: req.temperature ?? 0.0,
+          // Room for adaptive thinking (on by default on Claude Sonnet 5) as well as the JSON answer.
+          max_tokens: 16_000,
+          // Claude Sonnet 5 and later reject sampling parameters; Claude Haiku 4.5 still takes them.
+          ...(SAMPLING_MODELS.has(model) ? { temperature: req.temperature ?? 0.0 } : {}),
           system: systemPrompt,
           messages,
         });

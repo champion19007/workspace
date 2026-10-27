@@ -21,8 +21,12 @@ const GUIDE: { title: string; text: string }[] = [
     text: 'Drag cards between To do, In progress and Done, or tick tasks off in the list. Mark a task Blocked when it is waiting on something.',
   },
   {
-    title: 'Keep notes in docs',
-    text: 'Write briefs, plans and notes in Markdown next to the project. Every save keeps a version you can restore.',
+    title: 'Keep notes and files together',
+    text: "Write briefs and plans in a project's Docs, where every save keeps a version you can restore. Put contracts, designs and other files in its Files tab or on a task.",
+  },
+  {
+    title: 'Talk where the work is',
+    text: "Comment on a task, a doc or a project's Discussion and type @ to mention someone. The bell at the top shows your notifications.",
   },
   {
     title: 'Watch what needs attention',
@@ -45,8 +49,12 @@ const READ_ONLY_GUIDE: { title: string; text: string }[] = [
     text: 'Its Overview counts the tasks that are to do, in progress, stuck and done, and lists recent changes. Docs holds the briefs and plans the team wrote.',
   },
   {
+    title: 'Ask or comment any time',
+    text: "Ask AI answers questions like \"what's late?\" from your projects. To ask the team, write in a project's Discussion or on a doc.",
+  },
+  {
     title: 'You can look, not change',
-    text: "The organization's Owner or Managers chose your access level. Ask them if you need to see another project or do more.",
+    text: "Apart from comments, you can't change anything. The organization's Owner or Managers chose your access level: ask them if you need to see another project.",
   },
 ];
 
@@ -54,12 +62,27 @@ const FAQS: { question: string; answer: string }[] = [
   {
     question: 'What are the access levels?',
     answer:
-      "Owner: everything. Manager: runs projects and people, and decides which projects each client sees. Developer: does the work on projects, tasks and docs. Executive: sees how every project is going on the Progress page and can't change anything. Client: sees only the projects chosen for them, also read-only. The Owner or a Manager sets each person's level on People.",
+      "Owner: everything. Manager: runs projects and people, and decides which projects each client sees. Developer: does the work on projects, tasks and docs. Executive: sees how every project is going on the Progress page and can't change anything. Client: sees only the projects chosen for them, also read-only. Executives and clients can still comment and use Ask AI. The Owner or a Manager sets each person's level on People.",
   },
   {
     question: 'How do meeting notes get into Workspace?',
     answer:
       'Once Zoom is connected in Settings and a host has opted in, each recorded meeting is matched to a project after it ends. Workspace writes a summary, the decisions taken and suggested action items, each linked to the line of the transcript it came from.',
+  },
+  {
+    question: "Can I get notes from a meeting that wasn't on Zoom?",
+    answer:
+      'Yes. On Meetings, choose Notes from a transcript and paste the transcript or your rough notes (or open a .txt or .vtt file). AI writes the notes and suggests tasks; you tick the ones to create and can save the notes as a doc.',
+  },
+  {
+    question: 'How do clients or other teams ask us for work?',
+    answer:
+      "Turn on the Request form on a project's Overview and share its link. People fill it in without an account, and each request lands in your Inbox under Requests, where you accept it as a task or decline it.",
+  },
+  {
+    question: 'How do comments and notifications work?',
+    answer:
+      "Everyone who can see a task, doc or project can comment on it, and @mentions only offer people who can read the comment. Clients and executives can comment on projects and docs, but task comments stay inside the team. The bell at the top shows your notifications, such as new requests.",
   },
   {
     question: 'Why do I have to approve suggested action items?',
