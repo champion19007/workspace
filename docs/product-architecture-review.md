@@ -8,13 +8,12 @@ recommendation.
 
 **Yes, for planning and tracking work.** Projects grouped in teams, tasks with owners, priorities, due dates,
 labels and subtasks, list and board views, docs with version history, My tasks, and Insights (which projects
-are at risk, what's overdue or blocked). Sign-in is by email link or Google, and anyone can sign up and create
-an organization.
+are at risk, what's overdue or blocked). Sign-in is by email link or Google, anyone can sign up and create
+an organization, and owners and admins invite teammates (or a client, as a viewer) from People.
 
 What they will miss, most important first:
 
-1. **Inviting people** (being built in its own branch). Until then each person works in their own organization;
-   a freelancer can't add a client as a viewer.
+1. **Invitation emails.** Inviting works, but the app gives you the link to send yourself.
 2. **Comments and @mentions on tasks.** Discussion has to happen elsewhere.
 3. **Notifications and reminders.** Nothing emails people about assignments or due dates.
 4. **File attachments** on tasks and docs.
@@ -38,7 +37,7 @@ What they will miss, most important first:
 
 1. **Two backends for the same data.** The Next.js routes in `apps/web/src/app/api` and the Fastify API in
    `apps/api` both implement organizations, members and tasks on top of `@workspace/db`, and they have already
-   drifted (invitations exist only in the API). Pick one backend for the web app: either keep the Next.js routes
+   drifted once (invitations existed only in the API until the web got its own routes). Pick one backend for the web app: either keep the Next.js routes
    and retire the overlapping API routes, or have the web call the API.
 2. **Background features need a worker that Vercel can't host.** Meeting intake, AI notes and suggestions, the
    outbox relay and scheduled rollups run in `apps/worker`. Project health now repairs itself on read, but

@@ -103,6 +103,7 @@ export function HelpDrawer() {
             <span className="font-medium text-fg">Freelancers:</span> make one team per client and one project per engagement, so
             each client&apos;s tasks and docs stay together.
           </li>
+          <li>Invite teammates, or a client as a viewer, from People. You get a link to send them.</li>
           <li>Press Ctrl K (⌘K on a Mac) to jump to any project or page.</li>
         </ul>
       </section>
