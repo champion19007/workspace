@@ -4,6 +4,9 @@ import { createApiClient, type DatabaseInstance, type Sql } from '@workspace/db'
 
 let cachedConfig: AppConfig | null = null;
 let cachedPorts: AppPorts | null = null;
+// Route handlers can be bundled separately (in development each one is), so the in-memory ports, such as the
+// development file store, live on globalThis to be shared by an upload route and the download route.
+const shared = globalThis as typeof globalThis & { __workspacePorts?: AppPorts };
 let cachedDb: DatabaseInstance | null = null;
 let cachedSql: Sql | null = null;
 
@@ -58,11 +61,17 @@ export function getServerContext(): {
       ZOOM_CLIENT_SECRET: env.ZOOM_CLIENT_SECRET,
       ZOOM_REDIRECT_URI: env.ZOOM_REDIRECT_URI,
       SECRET_STORE_PROVIDER: env.SECRET_STORE_PROVIDER,
+      // Files: 'supabase' stores them in the workspace-attachments bucket (needs SUPABASE_SERVICE_ROLE_KEY).
+      STORAGE_PROVIDER: env.STORAGE_PROVIDER,
+      // AI features: 'anthropic' needs ANTHROPIC_API_KEY; the default mock returns canned answers.
+      LLM_PROVIDER: env.LLM_PROVIDER,
+      ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
+      VOYAGE_API_KEY: env.VOYAGE_API_KEY,
     });
   }
 
   if (!cachedPorts) {
-    cachedPorts = createAppPorts(cachedConfig);
+    cachedPorts = shared.__workspacePorts ??= createAppPorts(cachedConfig);
   }
 
   if (!cachedDb || !cachedSql) {

@@ -7,6 +7,7 @@ import { StatusBadge } from '@/components/ui/badge';
 import { Alert } from '@/components/ui/states';
 import { CreateTaskDialog } from './CreateTaskDialog';
 import { CommentThread } from '@/components/comments/CommentThread';
+import { FilePanel } from '@/components/files/FilePanel';
 import {
   type TaskDTO,
   type TaskLabelDTO,
@@ -58,6 +59,7 @@ export function TaskDetailDrawer({
   const [status, setStatus] = useState<TaskStatus>('todo');
   const [priority, setPriority] = useState<TaskPriority>('medium');
   const [assigneeId, setAssigneeId] = useState<string>('');
+  const [startDate, setStartDate] = useState<string>('');
   const [dueDate, setDueDate] = useState<string>('');
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
 
@@ -81,6 +83,7 @@ export function TaskDetailDrawer({
     setStatus(data.status);
     setPriority(data.priority);
     setAssigneeId(data.assigneeId || '');
+    setStartDate(data.startDate || '');
     setDueDate(data.dueDate || '');
     setSelectedLabels(data.labels.map((l) => l.id));
   };
@@ -139,6 +142,7 @@ export function TaskDetailDrawer({
       status !== task.status ||
       priority !== task.priority ||
       (assigneeId || null) !== (task.assigneeId || null) ||
+      (startDate || null) !== (task.startDate || null) ||
       (dueDate || null) !== (task.dueDate || null) ||
       !sameLabels(selectedLabels, task.labels.map((l) => l.id)));
 
@@ -167,6 +171,7 @@ export function TaskDetailDrawer({
           status,
           priority,
           assigneeId: assigneeId || null,
+          startDate: startDate || null,
           dueDate: dueDate || null,
           labelIds: selectedLabels,
         }),
@@ -356,17 +361,17 @@ export function TaskDetailDrawer({
                 </select>
               </div>
               <div>
-                <label htmlFor={`${ids}-assignee`} className="label">
-                  Assignee
+                <label htmlFor={`${ids}-start`} className="label">
+                  Start date
                 </label>
-                <select id={`${ids}-assignee`} value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)} className="field">
-                  <option value="">Unassigned</option>
-                  {availableMembers.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
+                <input
+                  id={`${ids}-start`}
+                  type="date"
+                  value={startDate}
+                  max={dueDate || undefined}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="field"
+                />
               </div>
               <div>
                 <div className="flex items-center justify-between">
@@ -384,7 +389,27 @@ export function TaskDetailDrawer({
                     </button>
                   )}
                 </div>
-                <input id={`${ids}-due`} type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="field" />
+                <input
+                  id={`${ids}-due`}
+                  type="date"
+                  value={dueDate}
+                  min={startDate || undefined}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  className="field"
+                />
+              </div>
+              <div>
+                <label htmlFor={`${ids}-assignee`} className="label">
+                  Assignee
+                </label>
+                <select id={`${ids}-assignee`} value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)} className="field">
+                  <option value="">Unassigned</option>
+                  {availableMembers.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
@@ -445,6 +470,13 @@ export function TaskDetailDrawer({
                   ))}
                 </ul>
               )}
+            </section>
+
+            <section aria-labelledby={`${ids}-files`} className="space-y-2 border-t border-border pt-5">
+              <h3 id={`${ids}-files`} className="text-sm font-semibold text-fg">
+                Attachments
+              </h3>
+              <FilePanel orgId={orgId} nodeId={task.projectId} taskId={task.id} canUpload emptyText="No attachments yet." />
             </section>
 
             <div className="border-t border-border pt-5">

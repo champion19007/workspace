@@ -182,12 +182,16 @@ export const CreateTaskSchema = z.object({
   status: TaskStatusEnum.default('todo'),
   priority: TaskPriorityEnum.default('medium'),
   assigneeId: z.string().uuid('Assignee ID must be a valid UUID').nullable().optional(),
+  startDate: CalendarDateSchema.optional(),
   dueDate: CalendarDateSchema.optional(),
   parentTaskId: z.string().uuid('Parent task ID must be a valid UUID').nullable().optional(),
   labelIds: z.array(z.string().uuid()).max(20, 'Maximum 20 labels per task').optional(),
   source: z.literal('manual').optional(),
   sourceRef: z.string().max(128).optional(),
 }).superRefine((data, ctx) => {
+  if (data.startDate && data.dueDate && data.startDate > data.dueDate) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'The start date must be on or before the due date', path: ['startDate'] });
+  }
   if ((data as any).source && (data as any).source !== 'manual') {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -210,6 +214,7 @@ export const UpdateTaskSchema = z.object({
   status: TaskStatusEnum.optional(),
   priority: TaskPriorityEnum.optional(),
   assigneeId: z.string().uuid('Assignee ID must be a valid UUID').nullable().optional(),
+  startDate: CalendarDateSchema.optional(),
   dueDate: CalendarDateSchema.optional(),
   parentTaskId: z.string().uuid('Parent task ID must be a valid UUID').nullable().optional(),
   labelIds: z.array(z.string().uuid()).max(20).optional(),
@@ -308,6 +313,8 @@ export interface TaskDTO {
   priority: TaskPriority;
   assigneeId: string | null;
   assignee?: TaskAssigneeDTO | null;
+  /** When work is planned to start (YYYY-MM-DD), for the Timeline. */
+  startDate: string | null;
   dueDate: string | null;
   rank: string;
   version: number;

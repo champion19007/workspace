@@ -23,6 +23,7 @@ describe('Web Task UI — Two-Tab Stale-Edit Journey & OCC Resolution', () => {
     priority: 'high',
     assigneeId: null,
     assignee: null,
+    startDate: null,
     dueDate: '2026-10-20',
     rank: '0|hzzzzz:',
     version: 1,

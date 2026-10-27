@@ -3,12 +3,12 @@
 import React, { useEffect } from 'react';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
-import { LayoutDashboard, ListTodo, Kanban, FileText, Lock } from 'lucide-react';
+import { LayoutDashboard, ListTodo, Kanban, CalendarDays, GanttChart, FileText, Paperclip, Lock } from 'lucide-react';
 import { isReadOnlyRole } from '@workspace/core';
 import { useShell } from '@/components/shell/shell-context';
 import { Badge, HealthBadge } from '@/components/ui/badge';
 
-/** Project header and view tabs, shared by Overview, List, Board and Docs (LTD-style project scope). */
+/** Project header and view tabs, shared by every project view (LTD-style project scope). */
 export default function ProjectLayout({ children }: { children: React.ReactNode }) {
   const params = useParams();
   const pathname = usePathname();
@@ -22,8 +22,11 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
     { href: `${base}/dashboard`, label: 'Overview', icon: LayoutDashboard },
     { href: `${base}/tasks`, label: 'List', icon: ListTodo },
     { href: `${base}/board`, label: 'Board', icon: Kanban },
+    { href: `${base}/calendar`, label: 'Calendar', icon: CalendarDays },
+    { href: `${base}/timeline`, label: 'Timeline', icon: GanttChart },
     { href: `${base}/docs`, label: 'Docs', icon: FileText },
-  ].filter((t) => !isReadOnlyRole(user?.role) || t.label === 'Overview' || t.label === 'Docs');
+    { href: `${base}/files`, label: 'Files', icon: Paperclip },
+  ].filter((t) => !isReadOnlyRole(user?.role) || ['Overview', 'Docs', 'Files'].includes(t.label));
   const activeTab = tabs.find((t) => pathname === t.href || pathname.startsWith(`${t.href}/`));
 
   useEffect(() => {

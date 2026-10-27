@@ -335,13 +335,13 @@ export async function createTaskInTransaction(
   await sql`
     INSERT INTO tasks (
       id, org_id, project_id, parent_task_id, key, title, description,
-      status, priority, assignee_id, due_date, rank, version,
+      status, priority, assignee_id, start_date, due_date, rank, version,
       source, source_ref, created_by, created_at, updated_at
     ) VALUES (
       ${taskId}, ${params.orgId}, ${project.id}, ${params.input.parentTaskId || null},
       ${taskKey}, ${params.input.title}, ${params.input.description || null},
       ${params.input.status || 'todo'}, ${params.input.priority || 'medium'},
-      ${params.input.assigneeId || null}, ${params.input.dueDate || null},
+      ${params.input.assigneeId || null}, ${params.input.startDate || null}, ${params.input.dueDate || null},
       ${rank}, 1, ${params.provenance?.source ?? 'manual'}, ${params.provenance?.sourceRef ?? null},
       ${params.actorUserId}, NOW(), NOW()
     )
@@ -423,6 +423,7 @@ export async function getTaskById(
     SELECT 
       t.id, t.org_id as "orgId", t.project_id as "projectId", t.parent_task_id as "parentTaskId",
       t.key, t.title, t.description, t.status, t.priority, t.assignee_id as "assigneeId",
+      TO_CHAR(t.start_date, 'YYYY-MM-DD') as "startDate",
       TO_CHAR(t.due_date, 'YYYY-MM-DD') as "dueDate",
       t.rank, t.version, t.source, t.source_ref as "sourceRef",
       t.created_by as "createdBy", t.archived_at as "archivedAt",
@@ -488,6 +489,7 @@ export async function getTaskById(
     priority: row.priority as TaskPriority,
     assigneeId: row.assigneeId,
     assignee,
+    startDate: row.startDate || null,
     dueDate: row.dueDate || null,
     rank: row.rank,
     version: row.version,
@@ -527,6 +529,7 @@ export async function listTasks(
     SELECT 
       t.id, t.org_id as "orgId", t.project_id as "projectId", t.parent_task_id as "parentTaskId",
       t.key, t.title, t.description, t.status, t.priority, t.assignee_id as "assigneeId",
+      TO_CHAR(t.start_date, 'YYYY-MM-DD') as "startDate",
       TO_CHAR(t.due_date, 'YYYY-MM-DD') as "dueDate",
       t.rank, t.version, t.source, t.source_ref as "sourceRef",
       t.created_by as "createdBy", t.archived_at as "archivedAt",
@@ -606,6 +609,7 @@ export async function listTasks(
       priority: row.priority as TaskPriority,
       assigneeId: row.assigneeId,
       assignee,
+      startDate: row.startDate || null,
       dueDate: row.dueDate || null,
       rank: row.rank,
       version: row.version,
@@ -690,7 +694,7 @@ export async function getMyTasks(
     SELECT
       t.id, t.org_id as "orgId", t.project_id as "projectId", t.parent_task_id as "parentTaskId",
       t.key, t.title, t.description, t.status, t.priority,
-      t.assignee_id as "assigneeId", t.due_date as "dueDate", t.rank, t.version,
+      t.assignee_id as "assigneeId", TO_CHAR(t.start_date, 'YYYY-MM-DD') as "startDate", t.due_date as "dueDate", t.rank, t.version,
       t.source, t.source_ref as "sourceRef", t.created_by as "createdBy",
       t.archived_at as "archivedAt", t.created_at as "createdAt", t.updated_at as "updatedAt",
       p.name as "projectName", p.key_prefix as "projectKeyPrefix",
@@ -776,6 +780,7 @@ export async function getMyTasks(
       priority: row.priority,
       assigneeId: row.assigneeId,
       assignee,
+      startDate: row.startDate || null,
       dueDate: row.dueDate ? (row.dueDate instanceof Date ? row.dueDate.toISOString().split('T')[0]! : String(row.dueDate)) : null,
       rank: row.rank,
       version: row.version,
@@ -899,6 +904,7 @@ export async function updateTaskInTransaction(
   if (params.input.status !== undefined && params.input.status !== currentTask.status) changedFields.push('status');
   if (params.input.priority !== undefined && params.input.priority !== currentTask.priority) changedFields.push('priority');
   if (params.input.assigneeId !== undefined && params.input.assigneeId !== currentTask.assigneeId) changedFields.push('assigneeId');
+  if (params.input.startDate !== undefined && params.input.startDate !== currentTask.startDate) changedFields.push('startDate');
   if (params.input.dueDate !== undefined && params.input.dueDate !== currentTask.dueDate) changedFields.push('dueDate');
   if (params.input.parentTaskId !== undefined && params.input.parentTaskId !== currentTask.parentTaskId) changedFields.push('parentTaskId');
   if (params.input.rank !== undefined && params.input.rank !== currentTask.rank) changedFields.push('rank');
@@ -910,7 +916,11 @@ export async function updateTaskInTransaction(
   const status = params.input.status !== undefined ? params.input.status : currentTask.status;
   const priority = params.input.priority !== undefined ? params.input.priority : currentTask.priority;
   const assigneeId = params.input.assigneeId !== undefined ? params.input.assigneeId : currentTask.assigneeId;
+  const startDate = params.input.startDate !== undefined ? params.input.startDate : currentTask.startDate;
   const dueDate = params.input.dueDate !== undefined ? params.input.dueDate : currentTask.dueDate;
+  if (startDate && dueDate && startDate > dueDate) {
+    throw new ValidationError('The start date must be on or before the due date');
+  }
   const parentTaskId = params.input.parentTaskId !== undefined ? params.input.parentTaskId : currentTask.parentTaskId;
   const rank = params.input.rank !== undefined ? params.input.rank : currentTask.rank;
 
@@ -921,6 +931,7 @@ export async function updateTaskInTransaction(
         status = ${status},
         priority = ${priority},
         assignee_id = ${assigneeId},
+        start_date = ${startDate},
         due_date = ${dueDate},
         parent_task_id = ${parentTaskId},
         rank = ${rank},
