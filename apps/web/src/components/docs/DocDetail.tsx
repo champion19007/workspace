@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { FileQuestion } from 'lucide-react';
 import { isReadOnlyRole, type DocDTO } from '@workspace/core';
 import { DocEditor } from './DocEditor';
+import { CommentThread } from '@/components/comments/CommentThread';
 import { EmptyState, ErrorState } from '@/components/ui/states';
 import { useShell } from '@/components/shell/shell-context';
 
@@ -67,5 +68,17 @@ export function DocDetail({ orgId, docId, backHref }: { orgId: string; docId: st
     return <ErrorState title="Couldn't open this doc" message={error} onRetry={load} />;
   }
 
-  return <DocEditor initialDoc={doc} orgId={orgId} backHref={backHref} onDocUpdated={setDoc} isViewer={isViewer} />;
+  return (
+    <div className="space-y-6">
+      <DocEditor initialDoc={doc} orgId={orgId} backHref={backHref} onDocUpdated={setDoc} isViewer={isViewer} />
+      <div className="card p-5">
+        <CommentThread
+          orgId={orgId}
+          targetType="doc"
+          targetId={doc.id}
+          emptyText="Leave feedback on this doc. Everyone who can open it can read the comments."
+        />
+      </div>
+    </div>
+  );
 }

@@ -8,6 +8,7 @@ import { CompletionRing } from '@/components/ui/completion-ring';
 import { MetricStrip, type MetricItem } from '@/components/ui/metric-strip';
 import { ErrorState } from '@/components/ui/states';
 import { Avatar } from '@/components/ui/avatar';
+import { CommentThread } from '@/components/comments/CommentThread';
 import { isReadOnlyRole, type ProjectDashboardDTO } from '@workspace/core';
 import { useShell } from '@/components/shell/shell-context';
 import { formatRelativeTime } from '@/lib/format';
@@ -207,6 +208,21 @@ export default function ProjectOverviewPage() {
           )}
         </section>
       </div>
+
+      <section id="discussion" className="card scroll-mt-20 p-5">
+        <CommentThread
+          orgId={orgId}
+          targetType="node"
+          targetId={projectId}
+          heading="Discussion"
+          emptyText={
+            readOnly
+              ? 'Questions or feedback about this project? Write them here and the team will see them.'
+              : 'Talk about the project as a whole: updates, questions and decisions.'
+          }
+          hint="Everyone who can see this project can read the discussion, including clients you've shared it with."
+        />
+      </section>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { Menu, Search, Sun, Moon, Keyboard, CircleHelp, ChevronRight } from 'lucide-react';
 import { isReadOnlyRole } from '@workspace/core';
 import { useShell } from './shell-context';
+import { NotificationBell } from './notification-bell';
 import { useTheme } from '../theme-provider';
 
 const SECTION_LABELS: Record<string, string> = {
@@ -101,6 +102,7 @@ export function TopBar() {
         >
           <Search aria-hidden="true" />
         </button>
+        <NotificationBell />
         <button
           type="button"
           onClick={() => setTheme(nextTheme)}

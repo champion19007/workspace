@@ -6,6 +6,7 @@ import { Drawer } from '@/components/ui/drawer';
 import { StatusBadge } from '@/components/ui/badge';
 import { Alert } from '@/components/ui/states';
 import { CreateTaskDialog } from './CreateTaskDialog';
+import { CommentThread } from '@/components/comments/CommentThread';
 import {
   type TaskDTO,
   type TaskLabelDTO,
@@ -445,6 +446,16 @@ export function TaskDetailDrawer({
                 </ul>
               )}
             </section>
+
+            <div className="border-t border-border pt-5">
+              <CommentThread
+                orgId={orgId}
+                targetType="task"
+                targetId={task.id}
+                emptyText="Ask a question or share an update. People you @mention get a notification."
+                hint="Only the team sees task comments, never clients."
+              />
+            </div>
           </div>
         ) : errorMessage ? (
           <Alert>{errorMessage}</Alert>

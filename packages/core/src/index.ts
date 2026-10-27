@@ -10,4 +10,5 @@ export * from './nodes/index.js';
 export * from './tasks/index.js';
 export * from './health/index.js';
 export * from './docs/index.js';
+export * from './comments/index.js';
 export * from './zoom/index.js';
