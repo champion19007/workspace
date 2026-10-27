@@ -77,8 +77,8 @@ describe('files and start dates (Real PostgreSQL)', () => {
         throw new Error('storage is down');
       })
     ).rejects.toThrow(/storage is down/);
-    const [{ n }] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM files WHERE org_id = ${orgId} AND name = 'Broken.pdf'`;
-    expect(n).toBe(0);
+    const [left] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM files WHERE org_id = ${orgId} AND name = 'Broken.pdf'`;
+    expect(left!.n).toBe(0);
   });
 
   it('lets the uploader, an Owner or a Manager delete a file', async () => {

@@ -151,6 +151,8 @@ describe('Stage 17b runtime RLS enforcement', () => {
       sys_outbox_mark_delivered: ['workspace_worker'],
       sys_outbox_purge: ['workspace_worker'],
       sys_outbox_record_failure: ['workspace_worker'],
+      sys_request_form_public: ['workspace_api'],
+      sys_request_submit: ['workspace_api'],
       sys_rollup_claim: ['workspace_worker'],
       sys_zoom_account_integration: ['workspace_api', 'workspace_worker'],
       sys_zoom_deauthorize: ['workspace_api', 'workspace_worker'],

@@ -20,3 +20,4 @@ export * from './resolution-operations.js';
 export * from './approval-operations.js';
 export * from './comment-operations.js';
 export * from './file-operations.js';
+export * from './request-operations.js';
