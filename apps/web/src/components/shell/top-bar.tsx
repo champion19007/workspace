@@ -4,6 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Menu, Search, Sun, Moon, Keyboard, CircleHelp, ChevronRight } from 'lucide-react';
+import { isReadOnlyRole } from '@workspace/core';
 import { useShell } from './shell-context';
 import { useTheme } from '../theme-provider';
 
@@ -21,6 +22,7 @@ const SECTION_LABELS: Record<string, string> = {
   settings: 'Settings',
   profile: 'Profile',
   chat: 'Ask AI',
+  progress: 'Progress',
 };
 
 interface Crumb {
@@ -31,7 +33,7 @@ interface Crumb {
 /** Breadcrumb trail for the current route; project ids resolve to names from the shell's project list. */
 function useCrumbs(): Crumb[] {
   const pathname = usePathname();
-  const { orgId, projects } = useShell();
+  const { orgId, projects, user } = useShell();
   const base = `/orgs/${orgId}`;
   const parts = pathname.slice(base.length).split('/').filter(Boolean);
 
@@ -42,7 +44,9 @@ function useCrumbs(): Crumb[] {
 
   if (section === 'projects') {
     const name = projects?.find((p) => p.id === id)?.name ?? (projects ? 'Project' : '…');
-    return [{ label: 'Projects', href: `${base}/projects` }, { label: name }];
+    // Executives and Clients reach projects from Progress (they have no Projects page).
+    const parent = isReadOnlyRole(user?.role) ? { label: 'Progress', href: `${base}/progress` } : { label: 'Projects', href: `${base}/projects` };
+    return [parent, { label: name }];
   }
   if (section === 'docs') return [{ label: 'Docs', href: `${base}/docs` }, { label: 'Document' }];
   if (section === 'settings') return [{ label: 'Settings', href: `${base}/settings` }, { label: 'Integrations' }];

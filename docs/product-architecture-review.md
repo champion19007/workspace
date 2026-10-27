@@ -9,7 +9,24 @@ recommendation.
 **Yes, for planning and tracking work.** Projects grouped in teams, tasks with owners, priorities, due dates,
 labels and subtasks, list and board views, docs with version history, My tasks, and Insights (which projects
 are at risk, what's overdue or blocked). Sign-in is by email link or Google, anyone can sign up and create
-an organization, and owners and admins invite teammates (or a client, as a viewer) from People.
+an organization, and Owners and Managers invite people from People at one of five access levels.
+
+## Access levels
+
+| Level | Stored role | Can do | Sees |
+|---|---|---|---|
+| Owner | `owner` | Everything, including making other Owners and Managers | Everything |
+| Manager | `admin` | Invite and remove people, choose which projects each client sees, all project work | Everything |
+| Developer | `member` | Create and update projects, tasks and docs | Public projects, and private ones they're on |
+| Executive | `viewer` | Nothing (read-only) | The **Progress** page for every project, each project's Overview and Docs |
+| Client | `client` | Nothing (read-only) | The same Progress view, for only the projects an Owner or Manager ticked under **Choose projects** |
+
+Executives and Clients are locked to the Progress view: any other page sends them back to it, and the sidebar,
+search and project tabs only offer what they can open. The real enforcement is on the server: every change is
+refused for both levels, and for clients the database itself (row-level security, migration `0016`) hides other
+projects, their tasks, docs and activity, plus meetings, comments and the member list. A level changes only when an
+Owner or Manager changes it on People. The server reads the level on every request, so a change applies at once,
+and the person's screens follow on their next page load.
 
 What they will miss, most important first:
 
@@ -32,6 +49,9 @@ What they will miss, most important first:
 | No security headers | Other sites could frame the app (clickjacking) | `X-Frame-Options: DENY`, `nosniff`, a strict referrer policy, HSTS and a permissions policy |
 | `zoom-journey.test.ts` deleted every organization's Zoom data | Running tests broke local demo data and hid all review suggestions | Cleanup is limited to the suite's own organizations |
 | No guidance for first-time users | People had to discover teams, projects, the board and docs on their own | A **Get started** checklist on Home that ticks itself off from real data, and a short guide at the top of Help |
+| Viewers saw every create, edit and move control, and the doc editor (its read-only flag was never passed) | Non-technical people got a builder's interface whose every action failed | Executives and Clients get the read-only Progress view described above |
+| A client could only join as a viewer, which sees every public project | Agencies couldn't let one client follow their project without showing them the others | The Client level, scoped in the database to chosen projects |
+| Any member could add anyone to any public project's member list | Project membership wasn't controlled | Read-only levels can't, and only Owners and Managers can add a client |
 
 ## Design and architecture findings still open
 

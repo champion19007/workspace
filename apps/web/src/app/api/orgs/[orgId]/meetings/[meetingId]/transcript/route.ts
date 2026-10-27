@@ -7,6 +7,7 @@ import {
   DomainError,
   GetTranscriptQuerySchema,
   formatETag,
+  isReadOnlyRole,
 } from '@workspace/core';
 
 export async function GET(
@@ -60,7 +61,7 @@ export async function GET(
     }
     const meeting = auth.meeting!;
 
-    if (tenant.role === 'viewer') {
+    if (isReadOnlyRole(tenant.role)) {
       return NextResponse.json(
         { error: 'FORBIDDEN', message: 'Viewers cannot access meeting transcripts' },
         { status: 403 }

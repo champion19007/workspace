@@ -15,16 +15,18 @@ import {
   ShieldCheck,
   User,
   Eye,
+  Briefcase,
   FileText,
   MinusCircle,
   Loader2,
   type LucideIcon,
 } from 'lucide-react';
-import type { HealthStatus, ZoomMeetingStatus } from '@workspace/core';
+import type { HealthStatus, OrgRole, ZoomMeetingStatus } from '@workspace/core';
+
+export type { OrgRole };
 
 export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'completed' | 'blocked' | 'cancelled';
 export type TaskPriority = 'urgent' | 'high' | 'medium' | 'low';
-export type OrgRole = 'owner' | 'admin' | 'member' | 'viewer';
 export type Tone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | 'info';
 
 const TONE_CLASS: Record<Tone, string> = {
@@ -98,9 +100,10 @@ export function PriorityBadge({ priority, size = 'md' }: { priority: TaskPriorit
 
 const ROLE_META: Record<OrgRole, { label: string; tone: Tone; icon: LucideIcon }> = {
   owner: { label: 'Owner', tone: 'accent', icon: ShieldAlert },
-  admin: { label: 'Admin', tone: 'info', icon: ShieldCheck },
-  member: { label: 'Member', tone: 'neutral', icon: User },
-  viewer: { label: 'Viewer', tone: 'neutral', icon: Eye },
+  admin: { label: 'Manager', tone: 'info', icon: ShieldCheck },
+  member: { label: 'Developer', tone: 'neutral', icon: User },
+  viewer: { label: 'Executive', tone: 'neutral', icon: Eye },
+  client: { label: 'Client', tone: 'neutral', icon: Briefcase },
 };
 
 export function RoleBadge({ role }: { role: OrgRole | string }) {

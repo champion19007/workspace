@@ -4,6 +4,7 @@ import React, { useEffect } from 'react';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
 import { LayoutDashboard, ListTodo, Kanban, FileText, Lock } from 'lucide-react';
+import { isReadOnlyRole } from '@workspace/core';
 import { useShell } from '@/components/shell/shell-context';
 import { Badge, HealthBadge } from '@/components/ui/badge';
 
@@ -13,7 +14,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   const pathname = usePathname();
   const orgId = params?.orgId as string;
   const projectId = params?.projectId as string;
-  const { projects, projectsError } = useShell();
+  const { projects, projectsError, user } = useShell();
   const project = projects?.find((p) => p.id === projectId);
 
   const base = `/orgs/${orgId}/projects/${projectId}`;
@@ -22,7 +23,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
     { href: `${base}/tasks`, label: 'List', icon: ListTodo },
     { href: `${base}/board`, label: 'Board', icon: Kanban },
     { href: `${base}/docs`, label: 'Docs', icon: FileText },
-  ];
+  ].filter((t) => !isReadOnlyRole(user?.role) || t.label === 'Overview' || t.label === 'Docs');
   const activeTab = tabs.find((t) => pathname === t.href || pathname.startsWith(`${t.href}/`));
 
   useEffect(() => {

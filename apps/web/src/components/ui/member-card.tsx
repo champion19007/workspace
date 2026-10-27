@@ -2,7 +2,7 @@
 
 import React, { useRef, useState } from 'react';
 import { MoreHorizontal, Trash2, Shield } from 'lucide-react';
-import { canInviteOrAssignRole, canModifyMemberRole, canRemoveMember } from '@workspace/core';
+import { canInviteOrAssignRole, canManageMembers, canModifyMemberRole, canRemoveMember } from '@workspace/core';
 import { RoleBadge, OrgRole } from './badge';
 import { Avatar } from './avatar';
 import { Dialog } from './dialog';
@@ -16,14 +16,17 @@ export interface MemberData {
   email: string;
   role: OrgRole;
   joinedAt?: string;
+  /** For a client: the projects they were added to, the only ones they see. */
+  projectIds?: string[];
 }
 
-/** Roles in the order they're offered, with what each one can do. */
+/** Access levels in the order they're offered, with what each one can do. */
 export const ROLE_CHOICES: { role: OrgRole; label: string; hint: string }[] = [
-  { role: 'owner', label: 'Owner', hint: 'Owners have full control, including managing admins and other owners.' },
-  { role: 'admin', label: 'Admin', hint: 'Admins can invite people and manage members and viewers.' },
-  { role: 'member', label: 'Member', hint: 'Members can work on projects, tasks and docs.' },
-  { role: 'viewer', label: 'Viewer', hint: "Viewers can see projects, tasks and docs, but can't change them." },
+  { role: 'owner', label: 'Owner', hint: 'Full control of the organization, including who is a Manager or Owner.' },
+  { role: 'admin', label: 'Manager', hint: 'Runs projects and people: invites teammates and clients, and chooses what each client sees.' },
+  { role: 'member', label: 'Developer', hint: 'Does the work: creates and updates projects, tasks and docs.' },
+  { role: 'viewer', label: 'Executive', hint: "Sees how every project is going on a simple Progress page. Can't change anything." },
+  { role: 'client', label: 'Client', hint: "Sees progress on only the projects you choose. Can't change anything or see your other clients." },
 ];
 
 interface MemberCardProps {
@@ -33,6 +36,9 @@ interface MemberCardProps {
   /** Rejects with a message to show when the change fails. */
   onUpdateRole?: (memberId: string, newRole: OrgRole) => Promise<void>;
   onRemoveMember?: (memberId: string) => Promise<void>;
+  /** Every project, to choose which ones a client sees. */
+  projects?: { id: string; name: string }[];
+  onSetProjects?: (memberId: string, projectIds: string[]) => Promise<void>;
 }
 
 export function MemberCard({
@@ -41,8 +47,11 @@ export function MemberCard({
   currentUserId,
   onUpdateRole,
   onRemoveMember,
+  projects = [],
+  onSetProjects,
 }: MemberCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [choosingProjects, setChoosingProjects] = useState(false);
   const [pending, setPending] = useState<OrgRole | 'remove' | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +72,9 @@ export function MemberCard({
         )
       : [];
   const canRemove = Boolean(onRemoveMember) && !isYou && canRemoveMember(currentUserRole, member.role, false);
+  const isClient = member.role === 'client';
+  const canChooseProjects = isClient && Boolean(onSetProjects) && canManageMembers(currentUserRole);
+  const clientProjects = projects.filter((p) => member.projectIds?.includes(p.id)).map((p) => p.name);
 
   const ask = (action: OrgRole | 'remove') => {
     setMenuOpen(false);
@@ -97,6 +109,19 @@ export function MemberCard({
             {isYou && <span className="badge badge-neutral h-5 px-1.5">You</span>}
           </div>
           <p className="truncate text-sm text-fg-muted">{member.email}</p>
+          {isClient && (
+            <p className="mt-0.5 text-xs text-fg-muted">
+              {clientProjects.length ? `Sees ${clientProjects.join(', ')}` : 'Sees no projects yet'}
+              {canChooseProjects && (
+                <>
+                  {' · '}
+                  <button type="button" onClick={() => setChoosingProjects(true)} className="link">
+                    Choose projects
+                  </button>
+                </>
+              )}
+            </p>
+          )}
         </div>
       </div>
 
@@ -119,7 +144,7 @@ export function MemberCard({
 
             {menuOpen && (
               <div role="menu" className="menu right-0 top-full mt-1 w-48">
-                {roleChoices.length > 0 && <div className="menu-label">Change role</div>}
+                {roleChoices.length > 0 && <div className="menu-label">Change access level</div>}
                 {roleChoices.map(({ role, label }) => (
                   <button key={role} type="button" role="menuitem" onClick={() => ask(role)} className="menu-item">
                     <Shield aria-hidden="true" />
@@ -172,6 +197,83 @@ export function MemberCard({
           </button>
         </div>
       </Dialog>
+
+      {choosingProjects && (
+        <ClientProjectsDialog
+          name={displayName}
+          projects={projects}
+          initial={member.projectIds ?? []}
+          onClose={() => setChoosingProjects(false)}
+          onSave={(ids) => onSetProjects!(member.id, ids)}
+        />
+      )}
     </div>
+  );
+}
+
+/** Ticks the projects a client can see. Mounted only while open, so it starts from their current access. */
+function ClientProjectsDialog({
+  name,
+  projects,
+  initial,
+  onClose,
+  onSave,
+}: {
+  name: string;
+  projects: { id: string; name: string }[];
+  initial: string[];
+  onClose: () => void;
+  onSave: (projectIds: string[]) => Promise<void>;
+}) {
+  const [selected, setSelected] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const toggle = (id: string) =>
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await onSave(selected);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong. Try again.');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog
+      isOpen
+      onClose={() => !busy && onClose()}
+      title={`Projects ${name} can see`}
+      description="They see each project's progress and docs, and nothing else. They can't change anything."
+      maxWidthClass="max-w-md"
+    >
+      {error && <Alert tone="danger" className="mb-4">{error}</Alert>}
+      {projects.length === 0 ? (
+        <p className="text-sm text-fg-muted">There are no projects yet. Create one first.</p>
+      ) : (
+        <fieldset className="max-h-72 space-y-0.5 overflow-y-auto">
+          <legend className="sr-only">Projects</legend>
+          {projects.map((p) => (
+            <label key={p.id} className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-sm text-fg hover:bg-surface-2">
+              <input type="checkbox" checked={selected.includes(p.id)} onChange={() => toggle(p.id)} className="h-4 w-4" />
+              <span className="min-w-0 truncate">{p.name}</span>
+            </label>
+          ))}
+        </fieldset>
+      )}
+      <div className="mt-4 flex justify-end gap-2 border-t border-border pt-4">
+        <button type="button" onClick={onClose} disabled={busy} className="btn btn-ghost">
+          Cancel
+        </button>
+        <button type="button" onClick={save} disabled={busy || projects.length === 0} className="btn btn-primary">
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </Dialog>
   );
 }

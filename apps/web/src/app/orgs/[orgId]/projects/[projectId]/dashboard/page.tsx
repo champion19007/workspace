@@ -8,7 +8,8 @@ import { CompletionRing } from '@/components/ui/completion-ring';
 import { MetricStrip, type MetricItem } from '@/components/ui/metric-strip';
 import { ErrorState } from '@/components/ui/states';
 import { Avatar } from '@/components/ui/avatar';
-import { type ProjectDashboardDTO } from '@workspace/core';
+import { isReadOnlyRole, type ProjectDashboardDTO } from '@workspace/core';
+import { useShell } from '@/components/shell/shell-context';
 import { formatRelativeTime } from '@/lib/format';
 
 const STATUS_SEGMENTS = [
@@ -43,6 +44,8 @@ export default function ProjectOverviewPage() {
   const orgId = params?.orgId as string;
   const projectId = params?.projectId as string;
   const base = `/orgs/${orgId}/projects/${projectId}`;
+  // Executives and Clients have no List or Board tab.
+  const readOnly = isReadOnlyRole(useShell().user?.role);
 
   const [dashboard, setDashboard] = useState<ProjectDashboardDTO | null>(null);
   const [loading, setLoading] = useState(true);
@@ -88,7 +91,7 @@ export default function ProjectOverviewPage() {
       value: rollup.tasks.open,
       dotColor: 'indigo',
       subtext: `${rollup.tasks.inProgress} in progress`,
-      href: `${base}/tasks`,
+      href: readOnly ? undefined : `${base}/tasks`,
     },
     {
       id: 'overdue',
@@ -123,10 +126,12 @@ export default function ProjectOverviewPage() {
             <h2 id="progress-heading" className="text-sm font-semibold text-fg">
               Progress
             </h2>
-            <Link href={`${base}/board`} className="inline-flex items-center gap-1 text-sm font-medium text-accent-text hover:underline">
-              Open board
-              <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-            </Link>
+            {!readOnly && (
+              <Link href={`${base}/board`} className="inline-flex items-center gap-1 text-sm font-medium text-accent-text hover:underline">
+                Open board
+                <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </Link>
+            )}
           </div>
 
           <div className="mt-5 flex flex-col items-center gap-6 sm:flex-row sm:items-center">
@@ -134,7 +139,7 @@ export default function ProjectOverviewPage() {
             <div className="w-full flex-1 space-y-4">
               <p className="text-sm text-fg-muted">
                 {total === 0 ? (
-                  'No tasks yet. Add some from the List tab.'
+                  readOnly ? 'No tasks yet.' : 'No tasks yet. Add some from the List tab.'
                 ) : (
                   <>
                     <span className="font-medium text-fg">{rollup.tasks.completed}</span> of{' '}

@@ -32,6 +32,7 @@ export async function GET(
         name: m.name,
         email: m.email,
         role: m.role,
+        projectIds: m.projectIds,
       })),
     });
   } catch (err) {

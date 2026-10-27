@@ -19,6 +19,7 @@ import {
   type TaskDTO,
   type UpdateTaskInput,
   APP_TIME_ZONE,
+  isReadOnlyRole,
 } from '@workspace/core';
 import { tenantSql, withTenantContext } from './client.js';
 import { authorizeMeetingAccess } from './meeting-intake-operations.js';
@@ -168,7 +169,7 @@ function mapActionItemRow(r: any, viewer: ActionItemViewer): ActionItemDTO {
     consentWithdrawn: !!r.consent_withdrawn,
     canDecide:
       viewer.role !== null &&
-      viewer.role !== 'viewer' &&
+      !isReadOnlyRole(viewer.role) &&
       r.state === 'suggested' &&
       validationStatus === 'valid' &&
       !r.superseded &&
@@ -222,7 +223,7 @@ export async function authorizeActionItemAccess(
     action: 'read',
   });
   if (!auth.authorized) throw new NotFoundError('Action item not found');
-  if (params.action === 'decide' && params.role === 'viewer') {
+  if (params.action === 'decide' && isReadOnlyRole(params.role)) {
     throw new ForbiddenError('Viewers cannot decide AI suggestions');
   }
   return { meetingId: item.meeting_id };

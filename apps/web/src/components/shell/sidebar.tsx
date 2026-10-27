@@ -20,8 +20,10 @@ import {
   Check,
   Plus,
   X,
+  Gauge,
   type LucideIcon,
 } from 'lucide-react';
+import { isReadOnlyRole } from '@workspace/core';
 import { useShell } from './shell-context';
 import { AccountMenu, UserSessionInfo } from './account-menu';
 import { HEALTH_META } from '../ui/badge';
@@ -143,6 +145,7 @@ export function Sidebar({ currentOrg, availableOrgs = [], user }: SidebarProps) 
   const pathname = usePathname();
   const {
     orgId,
+    user: shellUser,
     projects,
     projectsError,
     refreshProjects,
@@ -168,6 +171,8 @@ export function Sidebar({ currentOrg, availableOrgs = [], user }: SidebarProps) 
   }, [isMobileSidebarOpen]);
 
   const base = `/orgs/${orgId}`;
+  // Executives and Clients get the Progress view only (see isProgressViewPath).
+  const readOnly = isReadOnlyRole(shellUser?.role);
   const isActive = (path: string, exact = false) =>
     exact ? pathname === `${base}${path}` : pathname === `${base}${path}` || pathname.startsWith(`${base}${path}/`);
 
@@ -193,37 +198,49 @@ export function Sidebar({ currentOrg, availableOrgs = [], user }: SidebarProps) 
       </div>
 
       <nav aria-label="Main" className="flex-1 space-y-5 overflow-y-auto px-3 pb-4">
-        <div className="space-y-0.5">
-          <NavItem href={base} icon={Home} label="Home" active={isActive('', true)} />
-          <NavItem href={`${base}/my-tasks`} icon={CircleCheck} label="My tasks" active={isActive('/my-tasks')} />
-          <NavItem
-            href={`${base}/inbox`}
-            icon={Inbox}
-            label="Inbox"
-            active={isActive('/inbox')}
-            trailing={
-              inboxCount && inboxCount !== '0' ? (
-                <span className="count bg-accent-subtle text-accent-text">
-                  {inboxCount}
-                  <span className="sr-only"> suggestions to review</span>
-                </span>
-              ) : null
-            }
-          />
-        </div>
+        {readOnly ? (
+          <div className="space-y-0.5">
+            <NavItem href={`${base}/progress`} icon={Gauge} label="Progress" active={isActive('/progress')} />
+          </div>
+        ) : (
+          <div className="space-y-0.5">
+            <NavItem href={base} icon={Home} label="Home" active={isActive('', true)} />
+            <NavItem href={`${base}/my-tasks`} icon={CircleCheck} label="My tasks" active={isActive('/my-tasks')} />
+            <NavItem
+              href={`${base}/inbox`}
+              icon={Inbox}
+              label="Inbox"
+              active={isActive('/inbox')}
+              trailing={
+                inboxCount && inboxCount !== '0' ? (
+                  <span className="count bg-accent-subtle text-accent-text">
+                    {inboxCount}
+                    <span className="sr-only"> suggestions to review</span>
+                  </span>
+                ) : null
+              }
+            />
+          </div>
+        )}
 
         <div className="space-y-0.5">
           <div className="flex items-center justify-between px-2.5 pb-1">
-            <Link href={`${base}/projects`} className="text-xs font-medium text-fg-subtle hover:text-fg" aria-current={isActive('/projects', true) ? 'page' : undefined}>
-              Projects
-            </Link>
-            <Link
-              href={`${base}/projects?new=1`}
-              aria-label="New project"
-              className="rounded p-0.5 text-fg-subtle transition-colors hover:bg-surface-2 hover:text-fg"
-            >
-              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-            </Link>
+            {readOnly ? (
+              <span className="text-xs font-medium text-fg-subtle">Projects</span>
+            ) : (
+              <>
+                <Link href={`${base}/projects`} className="text-xs font-medium text-fg-subtle hover:text-fg" aria-current={isActive('/projects', true) ? 'page' : undefined}>
+                  Projects
+                </Link>
+                <Link
+                  href={`${base}/projects?new=1`}
+                  aria-label="New project"
+                  className="rounded p-0.5 text-fg-subtle transition-colors hover:bg-surface-2 hover:text-fg"
+                >
+                  <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                </Link>
+              </>
+            )}
           </div>
           {visibleProjects === null && projectsError ? (
             <p className="flex items-center justify-between gap-2 px-2.5 py-1 text-xs text-fg-muted">
@@ -238,6 +255,8 @@ export function Sidebar({ currentOrg, availableOrgs = [], user }: SidebarProps) 
               <div className="skeleton h-3.5 w-28" />
               <div className="skeleton h-3.5 w-32" />
             </div>
+          ) : visibleProjects.length === 0 && readOnly ? (
+            <p className="px-2.5 py-1 text-xs text-fg-muted">No projects shared with you yet.</p>
           ) : visibleProjects.length === 0 ? (
             <Link href={`${base}/projects?new=1`} className="nav-item text-fg-subtle">
               <Plus aria-hidden="true" />
@@ -276,19 +295,21 @@ export function Sidebar({ currentOrg, availableOrgs = [], user }: SidebarProps) 
           )}
         </div>
 
-        <div className="space-y-0.5">
-          <div className="px-2.5 pb-1 text-xs font-medium text-fg-subtle">Workspace</div>
-          <NavItem href={`${base}/tasks`} icon={ListTodo} label="All tasks" active={isActive('/tasks')} />
-          <NavItem href={`${base}/docs`} icon={FileText} label="Docs" active={isActive('/docs')} />
-          <NavItem href={`${base}/meetings`} icon={Video} label="Meetings" active={isActive('/meetings')} />
-          <NavItem href={`${base}/teams`} icon={Users} label="Teams" active={isActive('/teams')} />
-          <NavItem href={`${base}/members`} icon={UserRound} label="People" active={isActive('/members')} />
-          <NavItem href={`${base}/leadership`} icon={BarChart3} label="Insights" active={isActive('/leadership')} />
-        </div>
+        {!readOnly && (
+          <div className="space-y-0.5">
+            <div className="px-2.5 pb-1 text-xs font-medium text-fg-subtle">Workspace</div>
+            <NavItem href={`${base}/tasks`} icon={ListTodo} label="All tasks" active={isActive('/tasks')} />
+            <NavItem href={`${base}/docs`} icon={FileText} label="Docs" active={isActive('/docs')} />
+            <NavItem href={`${base}/meetings`} icon={Video} label="Meetings" active={isActive('/meetings')} />
+            <NavItem href={`${base}/teams`} icon={Users} label="Teams" active={isActive('/teams')} />
+            <NavItem href={`${base}/members`} icon={UserRound} label="People" active={isActive('/members')} />
+            <NavItem href={`${base}/leadership`} icon={BarChart3} label="Insights" active={isActive('/leadership')} />
+          </div>
+        )}
       </nav>
 
       <div className="space-y-0.5 border-t border-border p-3">
-        <NavItem href={`${base}/settings`} icon={Settings} label="Settings" active={isActive('/settings')} />
+        {!readOnly && <NavItem href={`${base}/settings`} icon={Settings} label="Settings" active={isActive('/settings')} />}
         <button type="button" onClick={() => setIsHelpDrawerOpen(true)} className="nav-item w-full">
           <CircleHelp aria-hidden="true" />
           Help

@@ -24,6 +24,7 @@ import {
   ForbiddenError,
   formatETag,
   type TaskStatus,
+  isReadOnlyRole,
 } from '@workspace/core';
 
 export const taskRoutes: FastifyPluginAsync<{ db: DatabaseInstance; ports?: AppPorts }> = async (
@@ -376,7 +377,7 @@ export const taskRoutes: FastifyPluginAsync<{ db: DatabaseInstance; ports?: AppP
       }
 
       // Viewers cannot trigger rebalance maintenance
-      if (request.tenant!.role === 'viewer') {
+      if (isReadOnlyRole(request.tenant!.role)) {
         throw new ForbiddenError('Viewers are not permitted to trigger rebalancing maintenance');
       }
 

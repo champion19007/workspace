@@ -24,7 +24,9 @@ import {
   Keyboard,
   CircleHelp,
   CornerDownLeft,
+  Gauge,
 } from 'lucide-react';
+import { isReadOnlyRole } from '@workspace/core';
 
 interface CommandItem {
   id: string;
@@ -37,7 +39,7 @@ interface CommandItem {
 
 export function CommandLauncher() {
   const router = useRouter();
-  const { orgId, projects, isCommandLauncherOpen, setIsCommandLauncherOpen, setIsShortcutsDialogOpen, setIsHelpDrawerOpen } =
+  const { orgId, user, projects, isCommandLauncherOpen, setIsCommandLauncherOpen, setIsShortcutsDialogOpen, setIsHelpDrawerOpen } =
     useShell();
   const { setTheme, setAccentColor, presets } = useTheme();
 
@@ -58,18 +60,23 @@ export function CommandLauncher() {
   const items = useMemo<CommandItem[]>(() => {
     const go = (path: string) => () => router.push(`/orgs/${orgId}${path}`);
     const icon = (Icon: typeof Home) => <Icon className="h-4 w-4" aria-hidden="true" />;
+    const readOnly = isReadOnlyRole(user?.role);
     return [
-      { id: 'home', title: 'Home', group: 'Go to', icon: icon(Home), keywords: 'dashboard overview', action: go('') },
-      { id: 'my-tasks', title: 'My tasks', group: 'Go to', icon: icon(CircleCheck), keywords: 'assigned due', action: go('/my-tasks') },
-      { id: 'inbox', title: 'Inbox', group: 'Go to', icon: icon(Inbox), keywords: 'approvals suggestions', action: go('/inbox') },
-      { id: 'projects', title: 'Projects', group: 'Go to', icon: icon(FolderKanban), action: go('/projects') },
-      { id: 'tasks', title: 'All tasks', group: 'Go to', icon: icon(ListTodo), keywords: 'list', action: go('/tasks') },
-      { id: 'docs', title: 'Docs', group: 'Go to', icon: icon(FileText), keywords: 'documents', action: go('/docs') },
-      { id: 'meetings', title: 'Meetings', group: 'Go to', icon: icon(Video), keywords: 'zoom transcripts notes', action: go('/meetings') },
-      { id: 'teams', title: 'Teams', group: 'Go to', icon: icon(Users), action: go('/teams') },
-      { id: 'people', title: 'People', group: 'Go to', icon: icon(UserRound), keywords: 'members invite', action: go('/members') },
-      { id: 'insights', title: 'Insights', group: 'Go to', icon: icon(BarChart3), keywords: 'leadership health risk', action: go('/leadership') },
-      { id: 'settings', title: 'Settings', group: 'Go to', icon: icon(Settings), keywords: 'appearance integrations zoom', action: go('/settings') },
+      ...(readOnly
+        ? [{ id: 'progress', title: 'Progress', group: 'Go to' as const, icon: icon(Gauge), keywords: 'status health', action: go('/progress') }]
+        : ([
+          { id: 'home', title: 'Home', group: 'Go to', icon: icon(Home), keywords: 'dashboard overview', action: go('') },
+          { id: 'my-tasks', title: 'My tasks', group: 'Go to', icon: icon(CircleCheck), keywords: 'assigned due', action: go('/my-tasks') },
+          { id: 'inbox', title: 'Inbox', group: 'Go to', icon: icon(Inbox), keywords: 'approvals suggestions', action: go('/inbox') },
+          { id: 'projects', title: 'Projects', group: 'Go to', icon: icon(FolderKanban), action: go('/projects') },
+          { id: 'tasks', title: 'All tasks', group: 'Go to', icon: icon(ListTodo), keywords: 'list', action: go('/tasks') },
+          { id: 'docs', title: 'Docs', group: 'Go to', icon: icon(FileText), keywords: 'documents', action: go('/docs') },
+          { id: 'meetings', title: 'Meetings', group: 'Go to', icon: icon(Video), keywords: 'zoom transcripts notes', action: go('/meetings') },
+          { id: 'teams', title: 'Teams', group: 'Go to', icon: icon(Users), action: go('/teams') },
+          { id: 'people', title: 'People', group: 'Go to', icon: icon(UserRound), keywords: 'members invite', action: go('/members') },
+          { id: 'insights', title: 'Insights', group: 'Go to', icon: icon(BarChart3), keywords: 'leadership health risk', action: go('/leadership') },
+          { id: 'settings', title: 'Settings', group: 'Go to', icon: icon(Settings), keywords: 'appearance integrations zoom', action: go('/settings') },
+          ] as CommandItem[])),
       ...(projects ?? []).map((p) => ({
         id: `project-${p.id}`,
         title: p.name,
@@ -91,7 +98,7 @@ export function CommandLauncher() {
       { id: 'shortcuts', title: 'Keyboard shortcuts', group: 'Help', icon: icon(Keyboard), action: () => setIsShortcutsDialogOpen(true) },
       { id: 'help', title: 'Help', group: 'Help', icon: icon(CircleHelp), action: () => setIsHelpDrawerOpen(true) },
     ];
-  }, [orgId, projects, presets, router, setTheme, setAccentColor, setIsShortcutsDialogOpen, setIsHelpDrawerOpen]);
+  }, [orgId, user, projects, presets, router, setTheme, setAccentColor, setIsShortcutsDialogOpen, setIsHelpDrawerOpen]);
 
   const q = query.trim().toLowerCase();
   const filtered = q

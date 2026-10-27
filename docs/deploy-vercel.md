@@ -79,8 +79,10 @@ use `export NAME="value"` instead of `$env:NAME = "value"`.
 ## 5. Check it works
 
 1. Open your site, sign in with your email and create your organization.
-2. Invite a teammate: **People → Invite people**, enter their email and copy the link. When they open it and
-   sign in with that email address, they join your organization. The link works once and expires in 7 days.
+2. Invite a teammate: **People → Invite people**, enter their email, pick their access level (Manager, Developer,
+   Executive or Client) and copy the link. When they open it and sign in with that email address, they join your
+   organization. The link works once and expires in 7 days. For a client, then use **Choose projects** on their card
+   to pick what they see; until you do, they see nothing.
 3. If pages fail to load, open the deployment's logs in Vercel. A message starting with
    *Production configuration is incomplete* lists exactly which variables are missing or wrong. The app
    refuses to run without real sign-in and its own session secret, so it can't be deployed in an unsafe state.

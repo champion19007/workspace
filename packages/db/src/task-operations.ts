@@ -25,6 +25,7 @@ import {
   type MyTaskItemDTO,
   type MyTasksCountsDTO,
   type MyTasksResponseDTO,
+  isReadOnlyRole,
 } from '@workspace/core';
 import { insertOutboxEvent } from './outbox-operations.js';
 import { tenantSql, type DbOrSql, type TenantContext } from './client.js';
@@ -248,7 +249,7 @@ export async function createTask(
     input: CreateTaskInput;
   }
 ): Promise<TaskDTO> {
-  if (params.role === 'viewer') {
+  if (isReadOnlyRole(params.role)) {
     throw new ForbiddenError('Viewers are not permitted to create tasks');
   }
 
@@ -271,7 +272,7 @@ export async function createTaskInTransaction(
     provenance?: { source: Exclude<TaskSource, 'manual'>; sourceRef: string };
   }
 ): Promise<TaskDTO> {
-  if (params.role === 'viewer') {
+  if (isReadOnlyRole(params.role)) {
     throw new ForbiddenError('Viewers are not permitted to create tasks');
   }
   // 1. Verify project exists, belongs to org, and user has access
@@ -811,7 +812,7 @@ export async function updateTask(
     input: UpdateTaskInput;
   }
 ): Promise<TaskDTO> {
-  if (params.role === 'viewer') {
+  if (isReadOnlyRole(params.role)) {
     throw new ForbiddenError('Viewers are not permitted to modify tasks');
   }
 
@@ -835,7 +836,7 @@ export async function updateTaskInTransaction(
     input: UpdateTaskInput;
   }
 ): Promise<TaskDTO> {
-  if (params.role === 'viewer') {
+  if (isReadOnlyRole(params.role)) {
     throw new ForbiddenError('Viewers are not permitted to modify tasks');
   }
   // 1. Fetch current task with project info & verify read access first
@@ -1013,7 +1014,7 @@ export async function archiveTask(
     ifMatchVersion?: number;
   }
 ): Promise<TaskDTO> {
-  if (params.role === 'viewer') {
+  if (isReadOnlyRole(params.role)) {
     throw new ForbiddenError('Viewers are not permitted to archive tasks');
   }
 
@@ -1091,7 +1092,7 @@ export async function moveTask(
     input: MoveTaskInput;
   }
 ): Promise<TaskDTO> {
-  if (params.role === 'viewer') {
+  if (isReadOnlyRole(params.role)) {
     throw new ForbiddenError('Viewers are not permitted to move tasks');
   }
 
@@ -1481,7 +1482,7 @@ export async function createLabel(
     input: CreateLabelInput;
   }
 ): Promise<TaskLabelDTO> {
-  if (params.role === 'viewer') {
+  if (isReadOnlyRole(params.role)) {
     throw new ForbiddenError('Viewers are not permitted to create labels');
   }
 
@@ -1507,7 +1508,7 @@ export async function deleteLabel(
     labelId: string;
   }
 ): Promise<void> {
-  if (params.role === 'viewer') {
+  if (isReadOnlyRole(params.role)) {
     throw new ForbiddenError('Viewers are not permitted to delete labels');
   }
 

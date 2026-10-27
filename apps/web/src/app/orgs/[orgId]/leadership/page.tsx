@@ -96,7 +96,15 @@ export default function InsightsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Insights" description="How every project you can see is doing, and which work is at risk." />
+      <PageHeader
+        title="Insights"
+        description="How every project you can see is doing, and which work is at risk."
+        actions={
+          <Link href={`/orgs/${orgId}/progress`} className="btn btn-secondary">
+            See the Progress view
+          </Link>
+        }
+      />
 
       {loading && !data ? (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-hidden="true">

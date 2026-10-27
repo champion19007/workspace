@@ -12,6 +12,7 @@ import {
   NotFoundError,
   ForbiddenError,
   ValidationError,
+  isReadOnlyRole,
 } from '@workspace/core';
 import { getOrRefreshZoomCredentials } from './zoom-operations.js';
 import { getMeetingById } from './transcript-operations.js';
@@ -691,7 +692,7 @@ export async function listOrgMeetings(
   const sql = tenantSql(db, { orgId, userId, role });
 
   // Viewers cannot inspect unrouted meeting intake records
-  if (role === 'viewer') {
+  if (isReadOnlyRole(role)) {
     return [];
   }
 
@@ -1046,7 +1047,7 @@ export async function authorizeMeetingAccess(
       };
     }
 
-    if (userRole === 'viewer') {
+    if (isReadOnlyRole(userRole)) {
       return {
         authorized: false,
         httpStatus: 403,
@@ -1066,7 +1067,7 @@ export async function authorizeMeetingAccess(
   // Only a verified identity binding (meetings.host_id) counts; no email comparison fallback.
   if (meeting.hostId !== userId) {
     const errorMessage =
-      userRole === 'viewer'
+      isReadOnlyRole(userRole)
         ? 'Viewers cannot access meeting transcripts for meetings they did not host'
         : 'You can only view transcripts for meetings you hosted';
     return {
@@ -1085,7 +1086,7 @@ export async function authorizeMeetingAccess(
     };
   }
 
-  if (userRole === 'viewer') {
+  if (isReadOnlyRole(userRole)) {
     return {
       authorized: false,
       httpStatus: 403,

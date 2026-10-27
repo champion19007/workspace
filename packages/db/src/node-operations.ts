@@ -7,6 +7,7 @@ import {
   generateUuidV7,
   getKolkataTodayDateString,
   type NodeRollupDTO,
+  isReadOnlyRole,
 } from '@workspace/core';
 import { insertOutboxEvent } from './outbox-operations.js';
 import { ensureFreshProjectRollup, markNodesDirty } from './rollup-operations.js';
@@ -158,7 +159,7 @@ export async function createNode(
   }
 
   // Only Owners and Admins can create teams or manage structure
-  if (role === 'viewer') {
+  if (isReadOnlyRole(role)) {
     throw new ForbiddenError('Viewers are not authorized to create nodes');
   }
 
@@ -526,7 +527,7 @@ export async function updateNode(
   const sql = tenantSql(target, { orgId: input.orgId, userId: input.actorUserId, role: input.role });
   const { orgId, nodeId, actorUserId, role, ifMatchVersion, name, description, visibility } = input;
 
-  if (role === 'viewer') {
+  if (isReadOnlyRole(role)) {
     throw new ForbiddenError('Viewers are not authorized to modify nodes');
   }
 
@@ -918,6 +919,9 @@ export async function addNodeMember(
   const sql = tenantSql(target, { orgId: params.orgId, userId: params.actorUserId, role: params.role });
   const { orgId, nodeId, targetUserId, actorUserId, role } = params;
 
+  if (isReadOnlyRole(role)) {
+    throw new ForbiddenError('Executives and clients cannot change who is on a project');
+  }
   if (role !== 'owner' && role !== 'admin') {
     // Only Owners, Admins, or existing private members can add members
     const isMember = await canUserAccessNode(sql, { orgId, nodeId, userId: actorUserId, role });
@@ -932,6 +936,10 @@ export async function addNodeMember(
   `;
   if (!membership) {
     throw new NotFoundError('Target user is not a member of this organization');
+  }
+  // A client sees exactly the projects they are added to, so only Owners and Managers decide that.
+  if (membership.role === 'client' && role !== 'owner' && role !== 'admin') {
+    throw new ForbiddenError('Only Owners and Managers can give a client access to a project');
   }
 
   // Ensure node exists and is in org

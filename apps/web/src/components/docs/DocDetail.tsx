@@ -2,12 +2,14 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { FileQuestion } from 'lucide-react';
-import type { DocDTO } from '@workspace/core';
+import { isReadOnlyRole, type DocDTO } from '@workspace/core';
 import { DocEditor } from './DocEditor';
 import { EmptyState, ErrorState } from '@/components/ui/states';
+import { useShell } from '@/components/shell/shell-context';
 
 /** Loads one doc and shows the editor, with loading, not-found and error states. */
 export function DocDetail({ orgId, docId, backHref }: { orgId: string; docId: string; backHref: string }) {
+  const isViewer = isReadOnlyRole(useShell().user?.role);
   const [doc, setDoc] = useState<DocDTO | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -65,5 +67,5 @@ export function DocDetail({ orgId, docId, backHref }: { orgId: string; docId: st
     return <ErrorState title="Couldn't open this doc" message={error} onRetry={load} />;
   }
 
-  return <DocEditor initialDoc={doc} orgId={orgId} backHref={backHref} onDocUpdated={setDoc} />;
+  return <DocEditor initialDoc={doc} orgId={orgId} backHref={backHref} onDocUpdated={setDoc} isViewer={isViewer} />;
 }

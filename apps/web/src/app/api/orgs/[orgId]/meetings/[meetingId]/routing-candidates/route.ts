@@ -3,7 +3,7 @@ import { getServerContext } from '@/lib/server-context';
 import { SESSION_COOKIE_NAME, verifyAndRefreshSession } from '@/lib/session';
 import { resolveTenantForUser } from '@/lib/resolve-org';
 import { authorizeMeetingAccess, getRoutingCandidatesForUser } from '@workspace/db';
-import { DomainError } from '@workspace/core';
+import { DomainError, isReadOnlyRole } from '@workspace/core';
 
 export async function GET(
   request: NextRequest,
@@ -38,7 +38,7 @@ export async function GET(
     }
     const currentMeeting = auth.meeting!;
 
-    if (tenant.role === 'viewer') {
+    if (isReadOnlyRole(tenant.role)) {
       return NextResponse.json(
         { error: 'FORBIDDEN', message: 'Viewers cannot view routing candidates' },
         { status: 403 }

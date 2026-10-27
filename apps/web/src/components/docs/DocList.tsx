@@ -4,12 +4,13 @@ import React, { useState, useEffect, useId } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FileText, Plus, Search, Archive, SearchX } from 'lucide-react';
-import type { DocListItemDTO } from '@workspace/core';
+import { isReadOnlyRole, type DocListItemDTO } from '@workspace/core';
 import { Dialog } from '@/components/ui/dialog';
 import { PageHeader } from '@/components/ui/page-header';
 import { Avatar } from '@/components/ui/avatar';
 import { Alert, EmptyState, ErrorState, SkeletonRows } from '@/components/ui/states';
 import { formatRelativeTime } from '@/lib/format';
+import { useShell } from '@/components/shell/shell-context';
 
 interface NodeOption {
   id: string;
@@ -22,11 +23,11 @@ interface DocListProps {
   orgId: string;
   /** Scope to one project/team (inside a project's Docs tab); links then stay inside the project. */
   nodeId?: string;
-  isViewer?: boolean;
   nodes?: NodeOption[];
 }
 
-export function DocList({ orgId, nodeId, isViewer = false, nodes = [] }: DocListProps) {
+export function DocList({ orgId, nodeId, nodes = [] }: DocListProps) {
+  const isViewer = isReadOnlyRole(useShell().user?.role);
   const router = useRouter();
   const ids = useId();
   const [docs, setDocs] = useState<DocListItemDTO[]>([]);

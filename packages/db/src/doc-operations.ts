@@ -12,6 +12,7 @@ import {
   type CreateDocInput,
   type UpdateDocInput,
   type ListDocsQuery,
+  isReadOnlyRole,
 } from '@workspace/core';
 import { tenantSql, type DbOrSql, type TenantContext } from './client.js';
 import { insertOutboxEvent } from './outbox-operations.js';
@@ -80,7 +81,7 @@ export async function createDoc(
     input: CreateDocInput;
   }
 ): Promise<DocDTO> {
-  if (params.role === 'viewer') {
+  if (isReadOnlyRole(params.role)) {
     throw new ForbiddenError('Viewers are not permitted to create documents');
   }
 
@@ -353,7 +354,7 @@ export async function updateDoc(
     input: UpdateDocInput;
   }
 ): Promise<DocDTO> {
-  if (params.role === 'viewer') {
+  if (isReadOnlyRole(params.role)) {
     throw new ForbiddenError('Viewers are not permitted to edit documents');
   }
 
@@ -623,7 +624,7 @@ export async function restoreDocVersion(
     ifMatchVersion: number;
   }
 ): Promise<DocDTO> {
-  if (params.role === 'viewer') {
+  if (isReadOnlyRole(params.role)) {
     throw new ForbiddenError('Viewers are not permitted to restore documents');
   }
 
@@ -790,7 +791,7 @@ export async function archiveDoc(
     ifMatchVersion: number;
   }
 ): Promise<DocDTO> {
-  if (params.role === 'viewer') {
+  if (isReadOnlyRole(params.role)) {
     throw new ForbiddenError('Viewers are not permitted to archive documents');
   }
 

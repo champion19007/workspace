@@ -1,4 +1,4 @@
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, inArray, sql } from 'drizzle-orm';
 import { loginSql, withTenantContext, type DatabaseInstance, type TenantTransaction } from './client.js';
 import { orgs, users, memberships, nodeMembers, invitations } from './schema/index.js';
 import {
@@ -197,10 +197,16 @@ export async function getMembershipContext(db: Db, orgId: string, userId: string
 
 /**
  * Lists all members of an organization with profile info, as seen by `actorUserId` (a member).
+ * `projectIds` lists the projects a client was added to (empty for everyone else).
  */
 export async function getOrganizationMembers(db: Db, orgId: string, actorUserId: string) {
-  return withTenantContext(db, { orgId, userId: actorUserId }, (tx) =>
-    tx
+  return withTenantContext(db, { orgId, userId: actorUserId }, async (tx) => {
+    // Clients see the people on their own projects (listNodeMembers), not the organization's roster.
+    const actor = await getMembershipContext(tx, orgId, actorUserId);
+    if (actor?.role === 'client') {
+      throw new ForbiddenError('Clients cannot see the member list');
+    }
+    const rows = await tx
       .select({
         userId: users.id,
         email: users.email,
@@ -211,8 +217,20 @@ export async function getOrganizationMembers(db: Db, orgId: string, actorUserId:
       })
       .from(memberships)
       .innerJoin(users, eq(memberships.userId, users.id))
-      .where(eq(memberships.orgId, orgId))
-  );
+      .where(eq(memberships.orgId, orgId));
+
+    const clientIds = rows.filter((r) => r.role === 'client').map((r) => r.userId);
+    const access = clientIds.length
+      ? await tx
+          .select({ userId: nodeMembers.userId, nodeId: nodeMembers.nodeId })
+          .from(nodeMembers)
+          .where(and(eq(nodeMembers.orgId, orgId), inArray(nodeMembers.userId, clientIds)))
+      : [];
+    return rows.map((r) => ({
+      ...r,
+      projectIds: r.role === 'client' ? access.filter((a) => a.userId === r.userId).map((a) => a.nodeId) : [],
+    }));
+  });
 }
 
 /**

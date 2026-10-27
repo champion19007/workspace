@@ -50,6 +50,15 @@ interface ShellContextType {
 
 const ShellContext = createContext<ShellContextType | null>(null);
 
+/**
+ * Executives and Clients only follow how work is going: the Progress page, each project's Overview and Docs,
+ * and their Profile. Every other page sends them to Progress (the server refuses their changes regardless).
+ */
+export function isProgressViewPath(pathname: string, orgId: string): boolean {
+  const rest = pathname.slice(`/orgs/${orgId}`.length);
+  return rest === '/progress' || rest === '/profile' || /^\/projects\/[^/]+\/(dashboard|docs)(\/|$)/.test(rest);
+}
+
 interface ProjectApiRow {
   id: string;
   name: string;

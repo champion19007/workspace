@@ -76,7 +76,7 @@ export const memberships = pgTable(
   {
     orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
     userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-    role: varchar('role', { length: 32 }).notNull().default('member'), // owner | admin | member | viewer
+    role: varchar('role', { length: 32 }).notNull().default('member'), // owner | admin | member | viewer | client
     sessionEpoch: integer('session_epoch').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -85,7 +85,7 @@ export const memberships = pgTable(
     primaryKey({ columns: [table.orgId, table.userId] }),
     uniqueIndex('idx_memberships_org_user').on(table.orgId, table.userId),
     index('idx_memberships_user_id').on(table.userId),
-    check('chk_membership_role', sql`${table.role} IN ('owner', 'admin', 'member', 'viewer')`),
+    check('chk_membership_role', sql`${table.role} IN ('owner', 'admin', 'member', 'viewer', 'client')`),
   ]
 );
 
@@ -807,7 +807,7 @@ export const invitations = pgTable(
   },
   (table) => [
     index('idx_invitations_org_email').on(table.orgId, table.email),
-    check('chk_invitations_role', sql`${table.role} IN ('owner', 'admin', 'member', 'viewer')`),
+    check('chk_invitations_role', sql`${table.role} IN ('owner', 'admin', 'member', 'viewer', 'client')`),
   ]
 );
 

@@ -3,19 +3,14 @@
 import React from 'react';
 import Link from 'next/link';
 import { ChevronRight, Palette, Video } from 'lucide-react';
+import { isReadOnlyRole } from '@workspace/core';
 import { useShell } from '@/components/shell/shell-context';
 import { displayNameFromEmail } from '@/components/shell/account-menu';
 import { Avatar } from '@/components/ui/avatar';
 import { RoleBadge } from '@/components/ui/badge';
+import { ROLE_CHOICES } from '@/components/ui/member-card';
 import { PageHeader } from '@/components/ui/page-header';
 import { Alert } from '@/components/ui/states';
-
-const ROLE_HINT: Record<string, string> = {
-  owner: 'Full control of this organization, its people and integrations.',
-  admin: 'Manages people, teams, projects and integrations.',
-  member: 'Works on the projects and tasks shared with them.',
-  viewer: 'Can see the projects shared with them, without making changes.',
-};
 
 export default function ProfilePage() {
   const { orgId, user } = useShell();
@@ -58,31 +53,37 @@ export default function ProfilePage() {
             <dd className="text-fg">With this email address, by one-time link or Google. There&apos;s no password to manage.</dd>
           </div>
           <div>
-            <dt className="text-xs text-fg-muted">Your role</dt>
-            <dd className="text-fg">{user ? ROLE_HINT[user.role] ?? user.role : '…'}</dd>
+            <dt className="text-xs text-fg-muted">Your access level</dt>
+            <dd className="text-fg">
+              {user ? ROLE_CHOICES.find((c) => c.role === user.role)?.hint ?? user.role : '…'} Your organization&apos;s
+              Owner or Managers set it.
+            </dd>
           </div>
         </dl>
       </section>
 
-      <section aria-labelledby="prefs-heading" className="space-y-3">
-        <h2 id="prefs-heading" className="text-sm font-semibold text-fg">
-          Preferences
-        </h2>
-        <ul className="card divide-y divide-border overflow-hidden">
-          {links.map(({ href, icon: Icon, title, text }) => (
-            <li key={href}>
-              <Link href={href} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2">
-                <Icon className="h-4 w-4 shrink-0 text-fg-muted" aria-hidden="true" />
-                <span className="min-w-0 flex-1">
-                  <span className="block font-medium text-fg">{title}</span>
-                  <span className="block text-sm text-fg-muted">{text}</span>
-                </span>
-                <ChevronRight className="h-4 w-4 text-fg-subtle" aria-hidden="true" />
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </section>
+      {/* Both live in Settings, which Executives and Clients don't have; the top bar switches the theme. */}
+      {!isReadOnlyRole(user?.role) && (
+        <section aria-labelledby="prefs-heading" className="space-y-3">
+          <h2 id="prefs-heading" className="text-sm font-semibold text-fg">
+            Preferences
+          </h2>
+          <ul className="card divide-y divide-border overflow-hidden">
+            {links.map(({ href, icon: Icon, title, text }) => (
+              <li key={href}>
+                <Link href={href} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2">
+                  <Icon className="h-4 w-4 shrink-0 text-fg-muted" aria-hidden="true" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-medium text-fg">{title}</span>
+                    <span className="block text-sm text-fg-muted">{text}</span>
+                  </span>
+                  <ChevronRight className="h-4 w-4 text-fg-subtle" aria-hidden="true" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <Alert tone="info">Changing your name, time zone or email notifications isn&apos;t available yet.</Alert>
     </div>

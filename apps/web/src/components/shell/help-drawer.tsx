@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Drawer } from '../ui/drawer';
 import { useShell } from './shell-context';
 import { ChevronDown } from 'lucide-react';
+import { isReadOnlyRole } from '@workspace/core';
 
 // A two-minute tour of how the pieces fit, in the order a new workspace is usually set up.
 const GUIDE: { title: string; text: string }[] = [
@@ -29,7 +30,32 @@ const GUIDE: { title: string; text: string }[] = [
   },
 ];
 
+// Executives and Clients follow the work without doing it.
+const READ_ONLY_GUIDE: { title: string; text: string }[] = [
+  {
+    title: 'Progress shows your projects',
+    text: "Each card says how far along a project is, whether it's on track, and in one sentence what's happening.",
+  },
+  {
+    title: 'What the colours mean',
+    text: 'On track: nothing is late. Needs attention: work is due in the next few days. At risk: something is past its due date.',
+  },
+  {
+    title: 'Open a project for the details',
+    text: 'Its Overview counts the tasks that are to do, in progress, stuck and done, and lists recent changes. Docs holds the briefs and plans the team wrote.',
+  },
+  {
+    title: 'You can look, not change',
+    text: "The organization's Owner or Managers chose your access level. Ask them if you need to see another project or do more.",
+  },
+];
+
 const FAQS: { question: string; answer: string }[] = [
+  {
+    question: 'What are the access levels?',
+    answer:
+      "Owner: everything. Manager: runs projects and people, and decides which projects each client sees. Developer: does the work on projects, tasks and docs. Executive: sees how every project is going on the Progress page and can't change anything. Client: sees only the projects chosen for them, also read-only. The Owner or a Manager sets each person's level on People.",
+  },
   {
     question: 'How do meeting notes get into Workspace?',
     answer:
@@ -43,7 +69,7 @@ const FAQS: { question: string; answer: string }[] = [
   {
     question: 'Who can see a project?',
     answer:
-      'Public projects are visible to everyone in the organization. Private projects are visible to their members and to organization owners and admins.',
+      'Public projects are visible to everyone in the organization except clients. Private projects are visible to their members and to Owners and Managers. Clients only ever see the projects an Owner or Manager chose for them.',
   },
   {
     question: 'Can I use the keyboard?',
@@ -58,8 +84,9 @@ const FAQS: { question: string; answer: string }[] = [
 ];
 
 export function HelpDrawer() {
-  const { isHelpDrawerOpen, setIsHelpDrawerOpen, setIsShortcutsDialogOpen } = useShell();
+  const { user, isHelpDrawerOpen, setIsHelpDrawerOpen, setIsShortcutsDialogOpen } = useShell();
   const [openIndex, setOpenIndex] = useState<number | null>(0);
+  const readOnly = isReadOnlyRole(user?.role);
 
   return (
     <Drawer
@@ -73,7 +100,7 @@ export function HelpDrawer() {
           How Workspace fits together
         </h3>
         <ol className="space-y-3">
-          {GUIDE.map((item, i) => (
+          {(readOnly ? READ_ONLY_GUIDE : GUIDE).map((item, i) => (
             <li key={item.title} className="flex gap-3">
               <span
                 className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-subtle text-xs font-semibold text-accent-text"
@@ -90,23 +117,28 @@ export function HelpDrawer() {
         </ol>
       </section>
 
-      <section aria-labelledby="help-tips-title" className="space-y-2 rounded-lg bg-surface-2 p-3">
-        <h3 id="help-tips-title" className="text-sm font-semibold text-fg">
-          Tips
-        </h3>
-        <ul className="list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-fg-muted">
-          <li>
-            <span className="font-medium text-fg">Project managers:</span> open Insights before your weekly check-in. It lists
-            overdue and blocked work across every project.
-          </li>
-          <li>
-            <span className="font-medium text-fg">Freelancers:</span> make one team per client and one project per engagement, so
-            each client&apos;s tasks and docs stay together.
-          </li>
-          <li>Invite teammates, or a client as a viewer, from People. You get a link to send them.</li>
-          <li>Press Ctrl K (⌘K on a Mac) to jump to any project or page.</li>
-        </ul>
-      </section>
+      {!readOnly && (
+        <section aria-labelledby="help-tips-title" className="space-y-2 rounded-lg bg-surface-2 p-3">
+          <h3 id="help-tips-title" className="text-sm font-semibold text-fg">
+            Tips
+          </h3>
+          <ul className="list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-fg-muted">
+            <li>
+              <span className="font-medium text-fg">Project managers:</span> open Insights before your weekly check-in. It lists
+              overdue and blocked work across every project.
+            </li>
+            <li>
+              <span className="font-medium text-fg">Freelancers:</span> make one team per client and one project per engagement, so
+              each client&apos;s tasks and docs stay together.
+            </li>
+            <li>
+              Invite teammates, executives and clients from People, and choose there which projects each client sees. You get a
+              link to send them.
+            </li>
+            <li>Press Ctrl K (⌘K on a Mac) to jump to any project or page.</li>
+          </ul>
+        </section>
+      )}
 
       <h3 className="text-sm font-semibold text-fg">Common questions</h3>
       <div className="card divide-y divide-border overflow-hidden">

@@ -11,7 +11,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { Alert, EmptyState, ErrorState, SkeletonCards } from '@/components/ui/states';
 import { useShell } from '@/components/shell/shell-context';
 
-const ROLE_ORDER: Record<string, number> = { owner: 0, admin: 1, member: 2, viewer: 3 };
+const ROLE_ORDER: Record<string, number> = { owner: 0, admin: 1, member: 2, viewer: 3, client: 4 };
 
 const byRoleThenName = (a: MemberData, b: MemberData) =>
   (ROLE_ORDER[a.role] ?? 9) - (ROLE_ORDER[b.role] ?? 9) || (a.name || a.email).localeCompare(b.name || b.email);
@@ -30,7 +30,7 @@ async function send<T = unknown>(url: string, init: RequestInit): Promise<T> {
 export default function MembersPage() {
   const params = useParams();
   const orgId = params?.orgId as string;
-  const { user } = useShell();
+  const { user, projects } = useShell();
 
   const [members, setMembers] = useState<MemberData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,13 +46,16 @@ export default function MembersPage() {
       const res = await fetch(`/api/orgs/${orgId}/members`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Members couldn't be loaded.");
-      const list: MemberData[] = (data.members ?? []).map((m: { id: string; name: string | null; email: string; role: OrgRole }) => ({
-        id: m.id,
-        userId: m.id,
-        name: m.name ?? '',
-        email: m.email,
-        role: m.role,
-      }));
+      const list: MemberData[] = (data.members ?? []).map(
+        (m: { id: string; name: string | null; email: string; role: OrgRole; projectIds?: string[] }) => ({
+          id: m.id,
+          userId: m.id,
+          name: m.name ?? '',
+          email: m.email,
+          role: m.role,
+          projectIds: m.projectIds ?? [],
+        })
+      );
       setMembers(list.sort(byRoleThenName));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -72,6 +75,27 @@ export default function MembersPage() {
       body: JSON.stringify({ role }),
     });
     setMembers((prev) => prev.map((m) => (m.id === memberId ? { ...m, role } : m)).sort(byRoleThenName));
+  };
+
+  // A client sees exactly the projects they're a member of: add and remove the difference.
+  const setClientProjects = async (memberId: string, projectIds: string[]) => {
+    const before = members.find((m) => m.id === memberId)?.projectIds ?? [];
+    try {
+      for (const nodeId of projectIds.filter((id) => !before.includes(id))) {
+        await send(`/api/orgs/${orgId}/nodes/${nodeId}/members`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: memberId }),
+        });
+      }
+      for (const nodeId of before.filter((id) => !projectIds.includes(id))) {
+        await send(`/api/orgs/${orgId}/nodes/${nodeId}/members?userId=${encodeURIComponent(memberId)}`, { method: 'DELETE' });
+      }
+    } catch (err) {
+      await load(); // some changes may have gone through: show what's saved
+      throw err;
+    }
+    setMembers((prev) => prev.map((m) => (m.id === memberId ? { ...m, projectIds } : m)));
   };
 
   const removeMember = async (memberId: string) => {
@@ -114,12 +138,13 @@ export default function MembersPage() {
             className="field field-sm pl-9"
           />
         </div>
-        <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} aria-label="Role" className="field field-sm w-auto">
-          <option value="all">All roles</option>
-          <option value="owner">Owners</option>
-          <option value="admin">Admins</option>
-          <option value="member">Members</option>
-          <option value="viewer">Viewers</option>
+        <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} aria-label="Access level" className="field field-sm w-auto">
+          <option value="all">All levels</option>
+          {ROLE_CHOICES.map((c) => (
+            <option key={c.role} value={c.role}>
+              {c.label}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -133,7 +158,7 @@ export default function MembersPage() {
         <EmptyState
           icon={SearchX}
           title="No one matches"
-          description="Try another name, email or role."
+          description="Try another name, email or level."
           action={{
             label: 'Clear filters',
             onClick: () => {
@@ -153,6 +178,8 @@ export default function MembersPage() {
                 currentUserId={user?.id}
                 onUpdateRole={updateRole}
                 onRemoveMember={removeMember}
+                projects={projects ?? []}
+                onSetProjects={setClientProjects}
               />
             </li>
           ))}
@@ -269,6 +296,12 @@ function InviteDialog({
               Send it to {invite.email} yourself. They sign in with that email address to join. The link works once and
               expires in {INVITATION_EXPIRY_DAYS} days.
             </p>
+            {role === 'client' && (
+              <p className="mt-1.5 text-sm text-fg-muted">
+                Once they&apos;ve joined, choose the projects they can see with <strong className="font-medium text-fg">Choose projects</strong> on
+                their card. Until then they see none.
+              </p>
+            )}
           </div>
           <div className="flex justify-end gap-2 border-t border-border pt-4">
             <button type="button" onClick={reset} className="btn btn-ghost">
@@ -300,7 +333,7 @@ function InviteDialog({
           </div>
           <div>
             <label htmlFor={`${ids}-role`} className="label">
-              Role
+              Access level
             </label>
             <select id={`${ids}-role`} value={role} onChange={(e) => setRole(e.target.value as OrgRole)} className="field">
               {ROLE_CHOICES.filter((c) => canInviteOrAssignRole(myRole, c.role)).map((c) => (

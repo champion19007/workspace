@@ -3,7 +3,7 @@ import { getServerContext } from '@/lib/server-context';
 import { SESSION_COOKIE_NAME, verifyAndRefreshSession } from '@/lib/session';
 import { resolveTenantForUser } from '@/lib/resolve-org';
 import { authorizeMeetingAccess, getMeetingById, getMeetingSpeakers, updateSpeakerMapping } from '@workspace/db';
-import { DomainError, UpdateSpeakerMappingSchema } from '@workspace/core';
+import { DomainError, UpdateSpeakerMappingSchema, isReadOnlyRole } from '@workspace/core';
 
 export async function GET(
   request: NextRequest,
@@ -38,7 +38,7 @@ export async function GET(
     }
     const currentMeeting = auth.meeting!;
 
-    if (tenant.role === 'viewer') {
+    if (isReadOnlyRole(tenant.role)) {
       return NextResponse.json(
         { error: 'FORBIDDEN', message: 'Viewers cannot view speaker information' },
         { status: 403 }
@@ -127,7 +127,7 @@ export async function POST(
     }
     const currentMeeting = auth.meeting!;
 
-    if (tenant.role === 'viewer') {
+    if (isReadOnlyRole(tenant.role)) {
       return NextResponse.json(
         { error: 'FORBIDDEN', message: 'Viewers cannot modify speaker mappings' },
         { status: 403 }
