@@ -68,6 +68,11 @@ export function getServerContext(): {
       LLM_PROVIDER: env.LLM_PROVIDER,
       ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
       VOYAGE_API_KEY: env.VOYAGE_API_KEY,
+      // Email: 'resend' needs RESEND_API_KEY and a verified sending domain; the default only logs (lib/email.ts).
+      EMAIL_PROVIDER: env.EMAIL_PROVIDER,
+      RESEND_API_KEY: env.RESEND_API_KEY,
+      EMAIL_FROM: env.EMAIL_FROM,
+      EMAIL_FROM_NOTIFICATIONS: env.EMAIL_FROM_NOTIFICATIONS,
     });
   }
 

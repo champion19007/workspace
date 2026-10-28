@@ -5,6 +5,7 @@ export * from './blob-store.js';
 export * from './auth.js';
 export * from './secret-store.js';
 export * from './zoom.js';
+export * from './email.js';
 
 export interface AppPorts {
   queue: import('./queue.js').QueuePort;
@@ -14,4 +15,5 @@ export interface AppPorts {
   auth: import('./auth.js').AuthPort;
   secretStore: import('./secret-store.js').SecretStorePort;
   zoomClient: import('./zoom.js').ZoomClientPort;
+  email: import('./email.js').EmailPort;
 }

@@ -3,7 +3,7 @@ import { getServerContext } from '@/lib/server-context';
 import { SESSION_COOKIE_NAME, verifyAndRefreshSession } from '@/lib/session';
 import { resolveTenantForUser } from '@/lib/resolve-org';
 import { problemFromError, problemJson } from '@/lib/problem';
-import { aiFailed, aiUnavailable, isDemoAi } from '@/lib/ai';
+import { aiFailed, aiRateLimited, aiUnavailable, isDemoAi } from '@/lib/ai';
 import { getVisibleProjectName } from '@workspace/db';
 import { TranscriptNotesRequestSchema, isReadOnlyRole, transcriptToLines, type TranscriptNotesDTO } from '@workspace/core';
 import { EXTRACTION_SYSTEM_PROMPT, ExtractionOutputSchema, PROMPT_VERSIONS, buildExtractionPrompt } from '@workspace/prompts';
@@ -25,6 +25,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { db, sql, ports } = getServerContext();
   const unavailable = aiUnavailable(ports, instance);
   if (unavailable) return unavailable;
+  const limited = await aiRateLimited(session.userId, instance);
+  if (limited) return limited;
 
   let tenant;
   let projectName: string;

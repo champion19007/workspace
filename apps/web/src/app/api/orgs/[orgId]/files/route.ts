@@ -3,6 +3,7 @@ import { getServerContext } from '@/lib/server-context';
 import { SESSION_COOKIE_NAME, verifyAndRefreshSession } from '@/lib/session';
 import { resolveTenantForUser } from '@/lib/resolve-org';
 import { problemFromError, problemJson } from '@/lib/problem';
+import { rateLimited } from '@/lib/rate-limit';
 import { createFile, listFiles } from '@workspace/db';
 import { ListFilesQuerySchema, MAX_FILE_BYTES, UploadFileFieldsSchema, cleanFileName } from '@workspace/core';
 
@@ -37,6 +38,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   try {
     const tenant = await resolveTenantForUser(db, orgIdentifier, session.userId);
+    const limited = await rateLimited(
+      [{ key: `uploads:${session.userId}`, limit: 60, windowSeconds: 3600 }],
+      instance,
+      "You've uploaded a lot of files in the last hour. Please try again a little later."
+    );
+    if (limited) return limited;
     const form = await request.formData().catch(() => null);
     const file = form?.get('file');
     const fields = UploadFileFieldsSchema.safeParse({

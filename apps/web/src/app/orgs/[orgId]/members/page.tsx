@@ -191,7 +191,7 @@ export default function MembersPage() {
   );
 }
 
-/** Creates an invitation and shows its link: there's no email sender, so the inviter passes it on. */
+/** Creates an invitation, which is emailed when email is set up, and shows its link to pass on as well. */
 function InviteDialog({
   isOpen,
   onClose,
@@ -209,7 +209,7 @@ function InviteDialog({
   const [role, setRole] = useState<OrgRole>('member');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [invite, setInvite] = useState<{ email: string; link: string } | null>(null);
+  const [invite, setInvite] = useState<{ email: string; link: string; emailSent: boolean } | null>(null);
   const [copied, setCopied] = useState(false);
 
   const reset = () => {
@@ -230,7 +230,7 @@ function InviteDialog({
     setSubmitting(true);
     setError(null);
     try {
-      const { invitation } = await send<{ invitation: { email: string; rawToken: string } }>(`/api/orgs/${orgId}/invitations`, {
+      const { invitation } = await send<{ invitation: { email: string; rawToken: string; emailSent: boolean } }>(`/api/orgs/${orgId}/invitations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim(), role }),
@@ -238,6 +238,7 @@ function InviteDialog({
       setInvite({
         email: invitation.email,
         link: `${window.location.origin}/invitations/accept?token=${encodeURIComponent(invitation.rawToken)}`,
+        emailSent: invitation.emailSent,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "The invitation couldn't be created. Try again.");
@@ -264,13 +265,15 @@ function InviteDialog({
     <Dialog
       isOpen={isOpen}
       onClose={close}
-      title={invite ? 'Share the invitation link' : 'Invite people'}
-      description={invite ? undefined : "Add someone to this organization. You'll get a link to send them."}
+      title={invite ? (invite.emailSent ? 'Invitation sent' : 'Share the invitation link') : 'Invite people'}
+      description={invite ? undefined : 'Add someone to this organization by email.'}
       maxWidthClass="max-w-md"
     >
       {invite ? (
         <div className="space-y-4">
-          <Alert tone="success">Invitation created for {invite.email}.</Alert>
+          <Alert tone="success">
+            {invite.emailSent ? `We've emailed an invitation to ${invite.email}.` : `Invitation created for ${invite.email}.`}
+          </Alert>
           <div>
             <label htmlFor={`${ids}-link`} className="label">
               Invitation link
@@ -293,8 +296,8 @@ function InviteDialog({
               {copied ? 'Link copied' : ''}
             </span>
             <p className="mt-1.5 text-sm text-fg-muted">
-              Send it to {invite.email} yourself. They sign in with that email address to join. The link works once and
-              expires in {INVITATION_EXPIRY_DAYS} days.
+              {invite.emailSent ? "If the email doesn't arrive, send them this link yourself." : `Send it to ${invite.email} yourself.`} They
+              sign in with that email address to join. The link works once and expires in {INVITATION_EXPIRY_DAYS} days.
             </p>
             {role === 'client' && (
               <p className="mt-1.5 text-sm text-fg-muted">

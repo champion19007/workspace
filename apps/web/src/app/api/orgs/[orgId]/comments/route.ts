@@ -3,6 +3,7 @@ import { getServerContext } from '@/lib/server-context';
 import { SESSION_COOKIE_NAME, verifyAndRefreshSession } from '@/lib/session';
 import { resolveTenantForUser } from '@/lib/resolve-org';
 import { problemFromError, problemJson } from '@/lib/problem';
+import { emailNotificationsSoon } from '@/lib/email';
 import { createComment, listComments } from '@workspace/db';
 import { CommentTargetQuerySchema, CreateCommentSchema } from '@workspace/core';
 
@@ -52,6 +53,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       role: tenant.role,
       input: parsed.data,
     });
+    // Mentions are emailed as they happen; the other notifications wait for the daily digest.
+    if (comment.mentions.length > 0) emailNotificationsSoon(request);
     return NextResponse.json(comment, { status: 201 });
   } catch (err) {
     return problemFromError(err, instance);

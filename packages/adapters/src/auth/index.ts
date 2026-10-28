@@ -70,15 +70,6 @@ export class ControllableMockAuthAdapter implements AuthPort {
       used: false,
     });
 
-    // Also store by predictable test code if it's a known test user
-    if (email === 'test@workspace.dev' || email === 'owner@workspace.dev') {
-      this.pendingChallenges.set('123456', {
-        email,
-        codeOrToken: '123456',
-        expiresAt: this.currentTimeMs + ttlMs,
-        used: false,
-      });
-    }
 
     return {
       messageId: `mock-msg-${this.currentTimeMs}`,
@@ -92,8 +83,8 @@ export class ControllableMockAuthAdapter implements AuthPort {
 
     const challenge = this.pendingChallenges.get(tokenOrCode);
     if (!challenge) {
-      // Allow fallback default token in mock test mode if starts with "valid-"
-      if (tokenOrCode.startsWith('valid-')) {
+      // Mock sign-in: any "valid-" token, or the code 123456, signs in whoever's email is given.
+      if (tokenOrCode.startsWith('valid-') || tokenOrCode === '123456') {
         return this.createMockAuthResult(email);
       }
       throw new UnauthorizedError('Invalid or expired login link');

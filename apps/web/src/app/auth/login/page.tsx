@@ -51,7 +51,7 @@ function LoginForm() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "We couldn't send a sign-in link. Please try again.");
+      if (!res.ok) throw new Error(data.message || data.detail || "We couldn't send a sign-in link. Please try again.");
 
       const next = new URLSearchParams({ email });
       if (returnTo) next.set('returnTo', returnTo);

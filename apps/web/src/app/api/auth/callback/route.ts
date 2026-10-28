@@ -6,17 +6,9 @@ import {
   PKCE_COOKIE_NAME,
   getCookieOptions,
   safeReturnTo,
-  serializeSession,
 } from '@/lib/session';
-import {
-  createSessionPayload,
-  type AuthUser,
-  type OrgRole,
-} from '@workspace/core';
-import {
-  findOrCreateUserByEmail,
-  getUserOrganizations,
-} from '@workspace/db';
+import { startSession } from '@/lib/sign-in';
+import type { AuthUser } from '@workspace/core';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -26,7 +18,6 @@ export async function GET(request: NextRequest) {
   const emailParam = searchParams.get('email');
   const returnTo = safeReturnTo(searchParams.get('returnTo'));
   const pkceState = request.cookies.get(PKCE_COOKIE_NAME)?.value;
-  let safeDestination = returnTo ?? '/onboarding';
 
   // Every exit drops the one-time PKCE cookie.
   const fail = (reason: string) => {
@@ -73,43 +64,12 @@ export async function GET(request: NextRequest) {
       return fail('missing_credentials');
     }
 
-    // 3. Sync or create user in PostgreSQL
-    const domainUser = await findOrCreateUserByEmail(db, {
-      email: authUser.email,
-      supabaseUid: authUser.providerUserId,
-    });
-
-    // 4. Resolve user's organizations
-    const userOrgs = await getUserOrganizations(db, domainUser.id);
-
-    let activeOrgId: string | null = null;
-    let role: OrgRole | null = null;
-    let sessionEpoch = 1;
-
-    if (userOrgs.length > 0 && userOrgs[0]) {
-      activeOrgId = userOrgs[0].orgId;
-      role = userOrgs[0].role as OrgRole;
-      sessionEpoch = userOrgs[0].sessionEpoch;
-      // An explicit destination (e.g. an invitation to accept) wins over the default organization.
-      if (!returnTo) safeDestination = `/orgs/${activeOrgId}`;
-    }
-
-    // 5. Create 30-day rolling encrypted session
-    const sessionPayload = createSessionPayload({
-      userId: domainUser.id,
-      email: domainUser.email,
-      activeOrgId,
-      role,
-      sessionEpoch,
-      providerRefreshToken,
-    });
-
-    const encryptedCookieValue = serializeSession(sessionPayload);
-    const destinationUrl = new URL(safeDestination, request.url);
-    const response = NextResponse.redirect(destinationUrl, 302);
+    // 3. Their user, organization and session
+    const { cookieValue, destination } = await startSession(db, authUser, providerRefreshToken, returnTo);
+    const response = NextResponse.redirect(new URL(destination, request.url), 302);
 
     // Set secure httpOnly session cookie
-    response.cookies.set(SESSION_COOKIE_NAME, encryptedCookieValue, getCookieOptions());
+    response.cookies.set(SESSION_COOKIE_NAME, cookieValue, getCookieOptions());
 
     // Clean up temporary OAuth state cookies
     response.cookies.delete(OAUTH_STATE_COOKIE_NAME);

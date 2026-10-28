@@ -127,20 +127,26 @@ describe('comments and notifications (Real PostgreSQL)', () => {
     expect(left.map((c) => c.bodyMd)).toEqual(['Looks good']);
   });
 
-  it('shows notifications only to the person they are for', async () => {
-    const note = { kind: 'mention' as const, title: 'Owner mentioned you', body: 'Hi', href: `/orgs/${orgId}` };
+  it('tells the right people about comments, and shows each notification only to its recipient', async () => {
+    const titles = async (userId: string, role: string) =>
+      (await listNotifications(db, as(userId, role))).notifications.map((n) => n.title);
+    // From the comments above: the client asked on the project, the owner answered and mentioned them.
+    expect(await titles(ownerId, 'owner')).toContain('Client commented on Acme website');
+    expect(await titles(clientId, 'client')).toContain('Owner mentioned you on Acme website');
+    // Task comments never reach clients, even when they were @mentioned.
+    expect((await titles(clientId, 'client')).some((t) => t.includes('Hero image'))).toBe(false);
+    expect((await titles(ownerId, 'owner')).some((t) => t.startsWith('Dev commented on') && t.endsWith('Hero image'))).toBe(true);
+
+    const note = { kind: 'mention' as const, title: 'Owner pinged you', body: 'Hi', href: `/orgs/${orgId}` };
     await tenantSql(sql, as(ownerId, 'owner')).begin(async (tx) => {
       await insertNotifications(tx, orgId, [{ ...note, userId: clientId, dedupeKey: 'test:1' }]);
       // A repeat with the same key is ignored, even though the sender can't see the first one.
       await insertNotifications(tx, orgId, [{ ...note, userId: clientId, dedupeKey: 'test:1' }]);
     });
-
-    const forClient = await listNotifications(db, as(clientId, 'client'));
-    expect(forClient.unreadCount).toBe(1);
-    expect(forClient.notifications.map((n) => n.title)).toEqual(['Owner mentioned you']);
-    expect((await listNotifications(db, as(ownerId, 'owner'))).notifications).toEqual([]);
+    expect((await titles(clientId, 'client')).filter((t) => t === 'Owner pinged you')).toHaveLength(1);
+    expect(await titles(ownerId, 'owner')).not.toContain('Owner pinged you');
     const [peek] = await tenantSql(sql, as(ownerId, 'owner'))<{ n: number }[]>`SELECT count(*)::int AS n FROM notifications`;
-    expect(peek!.n).toBe(0);
+    expect(peek!.n).toBe((await titles(ownerId, 'owner')).length);
 
     await markNotificationsRead(db, as(clientId, 'client'));
     expect((await listNotifications(db, as(clientId, 'client'))).unreadCount).toBe(0);

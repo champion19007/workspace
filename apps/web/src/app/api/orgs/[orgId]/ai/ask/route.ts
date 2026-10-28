@@ -3,7 +3,7 @@ import { getServerContext } from '@/lib/server-context';
 import { SESSION_COOKIE_NAME, verifyAndRefreshSession } from '@/lib/session';
 import { resolveTenantForUser } from '@/lib/resolve-org';
 import { problemFromError, problemJson } from '@/lib/problem';
-import { aiFailed, aiUnavailable, isDemoAi } from '@/lib/ai';
+import { aiFailed, aiRateLimited, aiUnavailable, isDemoAi } from '@/lib/ai';
 import { getLeadershipSummary, searchWorkspace } from '@workspace/db';
 import { AskAiRequestSchema, isReadOnlyRole, type AskAiAnswerDTO, type AskAiSourceDTO } from '@workspace/core';
 import { ASK_AI_SYSTEM_PROMPT, AskAiOutputSchema, PROMPT_VERSIONS } from '@workspace/prompts';
@@ -25,6 +25,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { db, sql, ports } = getServerContext();
   const unavailable = aiUnavailable(ports, instance);
   if (unavailable) return unavailable;
+  const limited = await aiRateLimited(session.userId, instance);
+  if (limited) return limited;
 
   let question: string;
   let sources: Array<AskAiSourceDTO & { text: string }>;

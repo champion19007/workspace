@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ChevronRight, Palette, Video } from 'lucide-react';
 import { isReadOnlyRole } from '@workspace/core';
@@ -11,6 +11,74 @@ import { RoleBadge } from '@/components/ui/badge';
 import { ROLE_CHOICES } from '@/components/ui/member-card';
 import { PageHeader } from '@/components/ui/page-header';
 import { Alert } from '@/components/ui/states';
+
+const EMAIL_CHOICES = [
+  { kind: 'mentions', title: 'When someone mentions me', text: 'Sent right away.', team: false },
+  { kind: 'requests', title: 'New requests from forms', text: 'Sent right away, to the people who look after them.', team: true },
+  { kind: 'digest', title: 'Daily summary', text: "Once a day, anything you haven't seen yet.", team: false },
+] as const;
+
+type EmailKind = (typeof EMAIL_CHOICES)[number]['kind'];
+
+function EmailSettings({ orgId, readOnly }: { orgId: string; readOnly: boolean }) {
+  const url = `/api/orgs/${orgId}/me/notification-settings`;
+  const [prefs, setPrefs] = useState<Record<EmailKind, boolean> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(url)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error())))
+      .then((data) => !cancelled && setPrefs(data))
+      .catch(() => !cancelled && setError("Your email settings couldn't be loaded. Refresh to try again."));
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+
+  const change = async (kind: EmailKind, enabled: boolean) => {
+    setError(null);
+    setPrefs((p) => p && { ...p, [kind]: enabled });
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind, enabled }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      setPrefs((p) => p && { ...p, [kind]: !enabled });
+      setError("That change wasn't saved. Try again.");
+    }
+  };
+
+  return (
+    <section aria-labelledby="email-heading" className="space-y-3">
+      <h2 id="email-heading" className="text-sm font-semibold text-fg">
+        Email notifications
+      </h2>
+      {error && <Alert>{error}</Alert>}
+      <ul className="card divide-y divide-border overflow-hidden">
+        {/* Requests only ever go to the team, so Executives and Clients aren't offered them. */}
+        {EMAIL_CHOICES.filter((c) => !(c.team && readOnly)).map(({ kind, title, text }) => (
+          <li key={kind}>
+            <label className="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2">
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium text-fg">{title}</span>
+                <span className="block text-sm text-fg-muted">{text}</span>
+              </span>
+              <input
+                type="checkbox"
+                className="h-4 w-4 shrink-0"
+                checked={prefs?.[kind] ?? true}
+                disabled={!prefs}
+                onChange={(e) => change(kind, e.target.checked)}
+              />
+            </label>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 export default function ProfilePage() {
   const { orgId, user } = useShell();
@@ -85,7 +153,9 @@ export default function ProfilePage() {
         </section>
       )}
 
-      <Alert tone="info">Changing your name, time zone or email notifications isn&apos;t available yet.</Alert>
+      <EmailSettings orgId={orgId} readOnly={isReadOnlyRole(user?.role)} />
+
+      <Alert tone="info">Changing your name or time zone isn&apos;t available yet.</Alert>
     </div>
   );
 }

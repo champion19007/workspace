@@ -3,7 +3,7 @@ import { getServerContext } from '@/lib/server-context';
 import { SESSION_COOKIE_NAME, verifyAndRefreshSession } from '@/lib/session';
 import { resolveTenantForUser } from '@/lib/resolve-org';
 import { problemFromError, problemJson } from '@/lib/problem';
-import { aiFailed, aiUnavailable, isDemoAi } from '@/lib/ai';
+import { aiFailed, aiRateLimited, aiUnavailable, isDemoAi } from '@/lib/ai';
 import {
   getLeadershipSummary,
   getProgressSummary,
@@ -54,6 +54,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (unavailable) return unavailable;
     const recent = await getProgressSummary(ctx.sql, { ...ctx.caller, scopeKey: ctx.scopeKey, maxAgeMinutes: REWRITE_AFTER_MINUTES });
     if (recent) return NextResponse.json({ summary: recent });
+    const limited = await aiRateLimited(ctx.caller.userId, instance);
+    if (limited) return limited;
   } catch (err) {
     return problemFromError(err, instance);
   }

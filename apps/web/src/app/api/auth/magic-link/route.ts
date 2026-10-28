@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getServerContext } from '@/lib/server-context';
 import { PKCE_COOKIE_NAME, authCallbackUrl, getPkceCookieOptions } from '@/lib/session';
+import { clientIp, rateLimited } from '@/lib/rate-limit';
 
 const MagicLinkSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
@@ -23,6 +24,17 @@ export async function POST(request: NextRequest) {
         { status: 422 }
       );
     }
+
+    // Each email costs money and reputation: a few per address, and a few more per network, each hour.
+    const limited = await rateLimited(
+      [
+        { key: `sign-in-email:${parsed.data.email.toLowerCase()}`, limit: 5, windowSeconds: 3600 },
+        { key: `sign-in-ip:${clientIp(request)}`, limit: 20, windowSeconds: 3600 },
+      ],
+      request.nextUrl.pathname,
+      'Too many sign-in emails. Check your inbox for the last one, or try again in a while.'
+    );
+    if (limited) return limited;
 
     const { ports } = getServerContext();
     const { codeVerifier } = await ports.auth.requestPasswordless({

@@ -57,10 +57,14 @@ export interface CommentRecipientInput {
  * the people who were @mentioned a "mentioned you" notification instead of "commented on".
  */
 export function commentRecipients(input: CommentRecipientInput): string[] {
-  // TODO(human): choose who is notified about a new comment.
-  void input;
-  return [];
+  // People in a long thread hear about it only while they're among its latest voices.
+  const recentCommenters = input.earlierCommenterIds.slice(-MAX_THREAD_RECIPIENTS);
+  const candidates = [...input.mentionedIds, input.assigneeId, input.creatorId, ...recentCommenters];
+  return [...new Set(candidates.filter((id): id is string => !!id && id !== input.authorId))];
 }
+
+/** How many earlier commenters a new comment notifies. */
+export const MAX_THREAD_RECIPIENTS = 10;
 
 // ============================================================================
 // Notifications

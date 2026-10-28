@@ -82,7 +82,7 @@ const FAQS: { question: string; answer: string }[] = [
   {
     question: 'How do comments and notifications work?',
     answer:
-      "Everyone who can see a task, doc or project can comment on it, and @mentions only offer people who can read the comment. Clients and executives can comment on projects and docs, but task comments stay inside the team. The bell at the top shows your notifications, such as new requests.",
+      "Everyone who can see a task, doc or project can comment on it, and @mentions only offer people who can read the comment. Clients and executives can comment on projects and docs, but task comments stay inside the team. The bell at the top shows your notifications, such as new requests. Mentions and new requests are also emailed straight away, the rest once a day as a summary of what you haven't seen; choose which emails you get on your Profile page.",
   },
   {
     question: 'Why do I have to approve suggested action items?',
@@ -155,8 +155,8 @@ export function HelpDrawer() {
               each client&apos;s tasks and docs stay together.
             </li>
             <li>
-              Invite teammates, executives and clients from People, and choose there which projects each client sees. You get a
-              link to send them.
+              Invite teammates, executives and clients from People, and choose there which projects each client sees. They get an
+              email with a link to join.
             </li>
             <li>Press Ctrl K (⌘K on a Mac) to jump to any project or page.</li>
           </ul>
