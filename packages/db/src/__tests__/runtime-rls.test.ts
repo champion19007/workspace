@@ -141,6 +141,8 @@ describe('Stage 17b runtime RLS enforcement', () => {
 
   describe('narrowly privileged entry points (migration 0015)', () => {
     const EXPECTED_GRANTEES: Record<string, string[]> = {
+      sys_ai_month_usage: ['workspace_api'],
+      sys_ai_usage_record: ['workspace_api'],
       sys_auth_invitation_org: ['workspace_api'],
       sys_auth_org_membership: ['workspace_api'],
       sys_auth_upsert_user: ['workspace_api'],
@@ -149,6 +151,7 @@ describe('Stage 17b runtime RLS enforcement', () => {
       sys_email_claim_instant: ['workspace_api'],
       sys_idempotency_purge: ['workspace_worker'],
       sys_meetings_pending_ready: ['workspace_worker'],
+      sys_notifications_purge: ['workspace_api'],
       sys_outbox_claim: ['workspace_worker'],
       sys_outbox_mark_delivered: ['workspace_worker'],
       sys_outbox_purge: ['workspace_worker'],
