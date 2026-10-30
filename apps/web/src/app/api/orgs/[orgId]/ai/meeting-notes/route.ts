@@ -3,7 +3,7 @@ import { getServerContext } from '@/lib/server-context';
 import { SESSION_COOKIE_NAME, verifyAndRefreshSession } from '@/lib/session';
 import { resolveTenantForUser } from '@/lib/resolve-org';
 import { problemFromError, problemJson } from '@/lib/problem';
-import { aiFailed, aiRateLimited, aiUnavailable, isDemoAi } from '@/lib/ai';
+import { aiBudgetExceeded, aiFailed, aiRateLimited, aiUnavailable, completeAndRecord, isDemoAi } from '@/lib/ai';
 import { getVisibleProjectName } from '@workspace/db';
 import { TranscriptNotesRequestSchema, isReadOnlyRole, transcriptToLines, type TranscriptNotesDTO } from '@workspace/core';
 import { EXTRACTION_SYSTEM_PROMPT, ExtractionOutputSchema, PROMPT_VERSIONS, buildExtractionPrompt } from '@workspace/prompts';
@@ -35,6 +35,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   try {
     tenant = await resolveTenantForUser(db, orgIdentifier, session.userId);
     if (isReadOnlyRole(tenant.role)) return problemJson(403, 'FORBIDDEN', 'Executives and clients cannot add meeting notes', instance);
+    const overBudget = await aiBudgetExceeded(tenant.orgId, instance);
+    if (overBudget) return overBudget;
     const parsed = TranscriptNotesRequestSchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) {
       return problemJson(422, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Check the form and try again', instance);
@@ -47,14 +49,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
 
   try {
-    const { data } = await ports.llm.complete({
+    const { data } = await completeAndRecord(ports, tenant.orgId, {
       promptId: 'extract.notes_and_actions',
       promptVersion: PROMPT_VERSIONS.extraction,
       tier: 'strong',
       input: buildExtractionPrompt({ meetingTitle: input.title, projectTitle: projectName, segments: lines }),
       schema: ExtractionOutputSchema,
       systemPrefix: EXTRACTION_SYSTEM_PROMPT,
-      temperature: 0,
     });
     // Same rule as meeting notes from Zoom: a suggestion stays only if its quote is really in the line it cites.
     const lineText = new Map(lines.map((l) => [l.seq, normalize(l.text)]));

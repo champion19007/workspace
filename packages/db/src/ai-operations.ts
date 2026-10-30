@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { NotFoundError, type ProgressSummaryDTO } from '@workspace/core';
-import { tenantSql, type DbOrSql, type TenantContext } from './client.js';
+import { loginSql, tenantSql, type DbOrSql, type TenantContext } from './client.js';
 
 const scoped = (db: DbOrSql, context: TenantContext): any => tenantSql(db, context);
 
@@ -153,4 +153,40 @@ export async function saveProgressSummary(
     `;
     return { ...params.body, createdAt: new Date(row.created_at).toISOString() };
   });
+}
+
+/** One AI call made by the web app, as the usage ledger stores it (migration 0022). */
+export interface AiUsageEntry {
+  orgId: string;
+  operation: string;
+  provider: string;
+  model: string;
+  promptId: string;
+  promptVersion: string;
+  inputTokens: number;
+  outputTokens: number;
+  costInr: number;
+  durationMs: number;
+  status: 'succeeded' | 'failed' | 'refused';
+  errorMessage?: string | null;
+}
+
+/** Writes one AI call to the organization's usage ledger, whoever made it (clients can't see the ledger). */
+export async function recordAiUsage(db: DbOrSql, e: AiUsageEntry): Promise<void> {
+  await loginSql(db)`SELECT sys_ai_usage_record(${e.orgId}, ${e.operation}, ${e.provider}, ${e.model}, ${e.promptId},
+    ${e.promptVersion}, ${e.inputTokens}, ${e.outputTokens}, ${e.costInr}, ${false}, ${e.durationMs}, ${e.status},
+    ${e.errorMessage ?? null})`;
+}
+
+/** The organization's monthly AI budget and what it has spent so far this calendar month (UTC), in INR. */
+export async function getAiMonthUsage(db: DbOrSql, orgId: string): Promise<{ budgetInr: number; usedInr: number }> {
+  const [row] = await loginSql(db)`SELECT budget_inr, used_inr FROM sys_ai_month_usage(${orgId})`;
+  if (!row) throw new NotFoundError('Organization not found');
+  return { budgetInr: Number(row.budget_inr), usedInr: Number(row.used_inr) };
+}
+
+/** Deletes notifications read more than 90 days ago. Returns how many went. */
+export async function purgeOldNotifications(db: DbOrSql): Promise<number> {
+  const [row] = await loginSql(db)`SELECT sys_notifications_purge() AS purged`;
+  return row!.purged;
 }

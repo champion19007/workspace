@@ -28,7 +28,7 @@ import {
  * 1. Fences execution by processing generation and verifies committed project route.
  * 2. Token-aware windowing: single window if <= 30k tokens; 20-min windows with 2-min overlap if > 30k tokens.
  * 3. Enforces AI budget limits before making provider calls.
- * 4. Executes strong-tier LLM extraction with prompt injection defense and temperature 0.0.
+ * 4. Executes strong-tier LLM extraction with prompt injection defense.
  * 5. Strictly enforces Requirement N-1: Validates verbatim quotes against stored transcript segments,
  *    and discards any action item with 0 valid evidence segments.
  * 6. Merges multi-window outputs and collapses overlap duplicates.
@@ -248,7 +248,6 @@ export async function handleMeetingRoutedJob(
             input: promptInput,
             schema: ExtractionOutputSchema,
             systemPrefix: EXTRACTION_SYSTEM_PROMPT,
-            temperature: 0.0,
           });
 
           // Record usage ledger entry

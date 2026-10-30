@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { purgeRateLimits } from '@workspace/db';
+import { purgeOldNotifications, purgeRateLimits } from '@workspace/db';
 import { getServerContext } from '@/lib/server-context';
 import { appUrl, safeEqual, sendDigests } from '@/lib/email';
 
@@ -16,6 +16,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
   }
   const digests = await sendDigests(appUrl(request), Date.now() + 45_000);
-  const purged = await purgeRateLimits(getServerContext().sql);
-  return NextResponse.json({ digests, purged });
+  const { sql } = getServerContext();
+  const purged = await purgeRateLimits(sql);
+  const notificationsPurged = await purgeOldNotifications(sql);
+  return NextResponse.json({ digests, purged, notificationsPurged });
 }

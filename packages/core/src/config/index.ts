@@ -53,6 +53,9 @@ export const AppConfigSchema = z.object({
   SUPABASE_ANON_KEY: z.string().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
+  // Unset = the adapter's current defaults (claude-haiku-5-5 / claude-sonnet-5-5); set to roll a tier back.
+  ANTHROPIC_FAST_MODEL: z.string().optional(),
+  ANTHROPIC_STRONG_MODEL: z.string().optional(),
   VOYAGE_API_KEY: z.string().optional(),
   VOYAGE_MODEL: z.string().default('voyage-3-lite'),
 

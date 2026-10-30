@@ -147,7 +147,6 @@ export async function resolveActionItemOwner(
               throw new Error('Missing valid userId in LLM response');
             },
           } as any,
-          temperature: 0,
         });
 
         if (result.data?.userId && candidateIds.has(result.data.userId)) {

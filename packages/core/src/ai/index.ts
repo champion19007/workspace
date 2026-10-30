@@ -86,3 +86,18 @@ export interface ProgressSummaryDTO {
   createdAt: string;
   demo: boolean;
 }
+
+// ============================================================================
+// Monthly AI budget (orgs.ai_budget_inr; docs/system-design/08-ai-and-cost.md §8.6)
+// ============================================================================
+
+/**
+ * Whether an organization may start another AI call this month, given what it has spent (`usedInr`) and its
+ * monthly budget (`budgetInr`), both in rupees. The web AI helpers answer 429 AI_BUDGET_EXCEEDED when false.
+ */
+export function aiBudgetAllows(usedInr: number, budgetInr: number): boolean {
+  // TODO(human): decide when an organization is out of AI budget.
+  void usedInr;
+  void budgetInr;
+  return true;
+}

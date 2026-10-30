@@ -3,7 +3,7 @@ import { getServerContext } from '@/lib/server-context';
 import { SESSION_COOKIE_NAME, verifyAndRefreshSession } from '@/lib/session';
 import { resolveTenantForUser } from '@/lib/resolve-org';
 import { problemFromError, problemJson } from '@/lib/problem';
-import { aiFailed, aiRateLimited, aiUnavailable, isDemoAi } from '@/lib/ai';
+import { aiBudgetExceeded, aiFailed, aiRateLimited, aiUnavailable, completeAndRecord, isDemoAi } from '@/lib/ai';
 import {
   getLeadershipSummary,
   getProgressSummary,
@@ -56,6 +56,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (recent) return NextResponse.json({ summary: recent });
     const limited = await aiRateLimited(ctx.caller.userId, instance);
     if (limited) return limited;
+    const overBudget = await aiBudgetExceeded(ctx.caller.orgId, instance);
+    if (overBudget) return overBudget;
   } catch (err) {
     return problemFromError(err, instance);
   }
@@ -81,14 +83,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         finishedThisWeek: done.filter((t) => t.projectId === p.id).slice(0, 5).map((t) => t.title),
       };
     });
-    const { data } = await ports.llm.complete({
+    const { data } = await completeAndRecord(ports, caller.orgId, {
       promptId: 'summarize.progress',
       promptVersion: PROMPT_VERSIONS.progressSummary,
       tier: 'fast',
       input: `<project_data>${JSON.stringify({ today: getKolkataTodayDateString(), projects })}</project_data>`,
       schema: ProgressSummaryOutputSchema,
       systemPrefix: PROGRESS_SUMMARY_SYSTEM_PROMPT,
-      temperature: 0.3,
     });
     const summary = await saveProgressSummary(sql, { ...caller, scopeKey, body: { ...data, demo: isDemoAi(ports) } });
     return NextResponse.json({ summary });

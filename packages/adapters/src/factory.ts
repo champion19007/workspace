@@ -59,6 +59,8 @@ export function createAppPorts(config: AppConfig): AppPorts {
     case 'anthropic':
       llm = new AnthropicLlmAdapter({
         apiKey: config.ANTHROPIC_API_KEY,
+        fastModel: config.ANTHROPIC_FAST_MODEL,
+        strongModel: config.ANTHROPIC_STRONG_MODEL,
         voyageApiKey: config.VOYAGE_API_KEY,
         voyageModel: config.VOYAGE_MODEL,
       });

@@ -1,7 +1,9 @@
 import type { NextResponse } from 'next/server';
-import type { AppPorts } from '@workspace/core';
+import { aiBudgetAllows, type AppPorts, type LLMCompletionRequest, type LLMCompletionResult } from '@workspace/core';
+import { getAiMonthUsage, recordAiUsage } from '@workspace/db';
 import { problemJson } from './problem';
 import { rateLimited } from './rate-limit';
+import { getServerContext } from './server-context';
 
 /** A 503 for production servers without an AI key (the mock would answer nonsense); null when AI can run. */
 export function aiUnavailable(ports: AppPorts, instance: string): NextResponse | null {
@@ -32,4 +34,56 @@ export function aiRateLimited(userId: string, instance: string): Promise<NextRes
     instance,
     "You've used the AI a lot in the last hour. Please try again a little later."
   );
+}
+
+/** A 429 once the organization has used this month's AI budget; null while it may still use AI. */
+export async function aiBudgetExceeded(orgId: string, instance: string): Promise<NextResponse | null> {
+  const { budgetInr, usedInr } = await getAiMonthUsage(getServerContext().sql, orgId);
+  if (aiBudgetAllows(usedInr, budgetInr)) return null;
+  return problemJson(
+    429,
+    'AI_BUDGET_EXCEEDED',
+    "Your organization has used this month's AI allowance. An Owner can raise it, or it resets on the 1st.",
+    instance
+  );
+}
+
+/**
+ * Runs one AI call and writes it to the organization's usage ledger, so it counts against the monthly budget.
+ * Development stand-in answers cost nothing and aren't recorded. A failed write to the ledger never fails the call.
+ */
+export async function completeAndRecord<T>(
+  ports: AppPorts,
+  orgId: string,
+  req: LLMCompletionRequest<T>
+): Promise<LLMCompletionResult<T>> {
+  const record = async (entry: Partial<LLMCompletionResult<T>> & { status: 'succeeded' | 'failed'; error?: string }) => {
+    if (isDemoAi(ports)) return;
+    try {
+      await recordAiUsage(getServerContext().sql, {
+        orgId,
+        operation: req.promptId,
+        provider: ports.llm.provider,
+        model: entry.model ?? 'unknown',
+        promptId: req.promptId,
+        promptVersion: req.promptVersion,
+        inputTokens: entry.inputTokens ?? 0,
+        outputTokens: entry.outputTokens ?? 0,
+        costInr: entry.costInr ?? 0,
+        durationMs: entry.durationMs ?? 0,
+        status: entry.status,
+        errorMessage: entry.error ?? null,
+      });
+    } catch (err) {
+      console.error('AI usage not recorded', { promptId: req.promptId, message: (err as Error).message });
+    }
+  };
+  try {
+    const result = await ports.llm.complete(req);
+    await record({ ...result, status: 'succeeded' });
+    return result;
+  } catch (err) {
+    await record({ status: 'failed', error: (err as Error)?.message });
+    throw err;
+  }
 }

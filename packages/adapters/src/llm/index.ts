@@ -108,6 +108,9 @@ export interface ModelPricing {
 }
 
 export const MODEL_PRICING_TABLE: Record<string, ModelPricing> = {
+  // Claude Haiku 5.5 prices hold for prompts up to 100K tokens ($0.50 / $2.50 beyond); our prompts stay far below.
+  'claude-haiku-5-5': { inputUsdPerMillion: 0.1, outputUsdPerMillion: 0.5 },
+  'claude-sonnet-5-5': { inputUsdPerMillion: 2.0, outputUsdPerMillion: 10.0 },
   'claude-sonnet-5': { inputUsdPerMillion: 2.0, outputUsdPerMillion: 10.0 },
   'claude-haiku-4-5': { inputUsdPerMillion: 1.0, outputUsdPerMillion: 5.0 },
   'claude-3-7-sonnet-latest': { inputUsdPerMillion: 3.0, outputUsdPerMillion: 15.0 },
@@ -138,9 +141,6 @@ export function calculateModelCostInr(
   return { costInr, estimated };
 }
 
-/** Models that still accept `temperature` (on the API version this SDK sends). */
-const SAMPLING_MODELS = new Set(['claude-haiku-4-5']);
-
 export class AnthropicLlmAdapter implements LLMPort {
   public readonly provider = 'anthropic';
   private client: Anthropic | null = null;
@@ -156,9 +156,10 @@ export class AnthropicLlmAdapter implements LLMPort {
         'Missing ANTHROPIC_API_KEY environment variable.'
       );
     }
-    // The tiers named in docs/roadmap-25-stages.md (the Claude 3.5 Haiku and 3.7 Sonnet aliases were retired).
-    this.fastModel = config.fastModel || 'claude-haiku-4-5';
-    this.strongModel = config.strongModel || 'claude-sonnet-5';
+    // Current generation (docs/system-design/08-ai-and-cost.md): Haiku 5.5 costs a tenth of Haiku 4.5, Sonnet 5.5
+    // the same as Sonnet 5. ANTHROPIC_FAST_MODEL / ANTHROPIC_STRONG_MODEL override them, e.g. to roll back.
+    this.fastModel = config.fastModel || 'claude-haiku-5-5';
+    this.strongModel = config.strongModel || 'claude-sonnet-5-5';
     this.timeoutMs = config.timeoutMs || 60_000;
   }
 
@@ -208,10 +209,9 @@ export class AnthropicLlmAdapter implements LLMPort {
       try {
         response = await client.messages.create({
           model,
-          // Room for adaptive thinking (on by default on Claude Sonnet 5) as well as the JSON answer.
+          // Room for adaptive thinking (on by default on Claude Haiku 5.5 and Sonnet 5.5) as well as the JSON
+          // answer. No temperature: these models reject sampling parameters, as does API version 2026-10-21.
           max_tokens: 16_000,
-          // Claude Sonnet 5 and later reject sampling parameters; Claude Haiku 4.5 still takes them.
-          ...(SAMPLING_MODELS.has(model) ? { temperature: req.temperature ?? 0.0 } : {}),
           system: systemPrompt,
           messages,
         });

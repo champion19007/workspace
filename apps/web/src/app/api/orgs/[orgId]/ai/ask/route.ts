@@ -3,7 +3,7 @@ import { getServerContext } from '@/lib/server-context';
 import { SESSION_COOKIE_NAME, verifyAndRefreshSession } from '@/lib/session';
 import { resolveTenantForUser } from '@/lib/resolve-org';
 import { problemFromError, problemJson } from '@/lib/problem';
-import { aiFailed, aiRateLimited, aiUnavailable, isDemoAi } from '@/lib/ai';
+import { aiBudgetExceeded, aiFailed, aiRateLimited, aiUnavailable, completeAndRecord, isDemoAi } from '@/lib/ai';
 import { getLeadershipSummary, searchWorkspace } from '@workspace/db';
 import { AskAiRequestSchema, isReadOnlyRole, type AskAiAnswerDTO, type AskAiSourceDTO } from '@workspace/core';
 import { ASK_AI_SYSTEM_PROMPT, AskAiOutputSchema, PROMPT_VERSIONS } from '@workspace/prompts';
@@ -28,10 +28,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const limited = await aiRateLimited(session.userId, instance);
   if (limited) return limited;
 
+  let orgId: string;
   let question: string;
   let sources: Array<AskAiSourceDTO & { text: string }>;
   try {
     const tenant = await resolveTenantForUser(db, orgIdentifier, session.userId);
+    orgId = tenant.orgId;
+    const overBudget = await aiBudgetExceeded(orgId, instance);
+    if (overBudget) return overBudget;
     const parsed = AskAiRequestSchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) return problemJson(422, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Ask a question', instance);
     question = parsed.data.question;
@@ -81,14 +85,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
 
   try {
-    const { data } = await ports.llm.complete({
+    const { data } = await completeAndRecord(ports, orgId, {
       promptId: 'ask_ai.answer',
       promptVersion: PROMPT_VERSIONS.askAi,
       tier: 'fast',
       input: `<sources>\n${sources.map((s) => `[${s.n}] ${s.text}`).join('\n')}\n</sources>\n\nQuestion: ${question}`,
       schema: AskAiOutputSchema,
       systemPrefix: ASK_AI_SYSTEM_PROMPT,
-      temperature: 0,
     });
     const cited = new Set(data.citations.map(Number));
     const answer: AskAiAnswerDTO = {
