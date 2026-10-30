@@ -182,6 +182,41 @@ export async function markNodesDirty(
   return affectedIds;
 }
 
+/**
+ * A project's rollup as of today. Task changes only mark a project dirty and a worker recomputes it later, so
+ * reads repair it first when it is missing, from an earlier day or dirty. This keeps health right when no worker
+ * runs (a web-only deployment) or before it gets to the project. Storing the repair is best effort.
+ */
+export async function ensureFreshProjectRollup(
+  sql: any,
+  params: {
+    orgId: string;
+    projectId: string;
+    cached: NodeRollupDTO | null;
+    dirtyGeneration: number | null;
+    dateContext: string;
+  }
+): Promise<NodeRollupDTO> {
+  const { orgId, projectId, cached, dirtyGeneration, dateContext } = params;
+  if (cached?.provenance && cached.provenance.dateContext === dateContext && dirtyGeneration === null) {
+    return cached;
+  }
+  const generation = dirtyGeneration ?? cached?.provenance?.generation ?? 1;
+  const fresh = await calculateProjectRollup(sql, { orgId, projectId, dateContext, generation });
+  try {
+    await sql`UPDATE nodes SET rollup = ${JSON.stringify(fresh)}::jsonb WHERE id = ${projectId} AND org_id = ${orgId}`;
+    if (dirtyGeneration !== null) {
+      await sql`
+        DELETE FROM node_rollup_dirty
+        WHERE org_id = ${orgId} AND node_id = ${projectId} AND dirty_generation <= ${generation}
+      `;
+    }
+  } catch {
+    // The fresh value is still returned; the next read or the worker stores it.
+  }
+  return fresh;
+}
+
 // ---------------------------------------------------------------------------
 // 3. Worker Bottom-Up Recomputation & Generational Watermark Check
 // ---------------------------------------------------------------------------

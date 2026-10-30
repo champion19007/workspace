@@ -35,9 +35,10 @@ BEGIN
     CREATE ROLE workspace_worker LOGIN NOINHERIT;
   END IF;
   EXECUTE format('GRANT CONNECT ON DATABASE %I TO workspace_api, workspace_worker', current_database());
-  -- A non-superuser migration owner must be able to hand the entry points of section 6 to workspace_definer.
+  -- A non-superuser migration owner (e.g. Supabase's postgres role) must be able to hand the entry points of
+  -- section 6 to workspace_definer and create the pgboss schema owned by workspace_worker.
   IF NOT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) THEN
-    EXECUTE format('GRANT workspace_definer TO %I WITH INHERIT FALSE, SET TRUE', current_user);
+    EXECUTE format('GRANT workspace_definer, workspace_worker TO %I WITH INHERIT FALSE, SET TRUE', current_user);
   END IF;
 END $$;
 

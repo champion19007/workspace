@@ -108,6 +108,11 @@ export interface ModelPricing {
 }
 
 export const MODEL_PRICING_TABLE: Record<string, ModelPricing> = {
+  // Claude Haiku 5.5 prices hold for prompts up to 100K tokens ($0.50 / $2.50 beyond); our prompts stay far below.
+  'claude-haiku-5-5': { inputUsdPerMillion: 0.1, outputUsdPerMillion: 0.5 },
+  'claude-sonnet-5-5': { inputUsdPerMillion: 2.0, outputUsdPerMillion: 10.0 },
+  'claude-sonnet-5': { inputUsdPerMillion: 2.0, outputUsdPerMillion: 10.0 },
+  'claude-haiku-4-5': { inputUsdPerMillion: 1.0, outputUsdPerMillion: 5.0 },
   'claude-3-7-sonnet-latest': { inputUsdPerMillion: 3.0, outputUsdPerMillion: 15.0 },
   'claude-3-5-sonnet-latest': { inputUsdPerMillion: 3.0, outputUsdPerMillion: 15.0 },
   'claude-3-5-sonnet-20241022': { inputUsdPerMillion: 3.0, outputUsdPerMillion: 15.0 },
@@ -151,9 +156,11 @@ export class AnthropicLlmAdapter implements LLMPort {
         'Missing ANTHROPIC_API_KEY environment variable.'
       );
     }
-    this.fastModel = config.fastModel || 'claude-3-5-haiku-latest';
-    this.strongModel = config.strongModel || 'claude-3-7-sonnet-latest';
-    this.timeoutMs = config.timeoutMs || 30_000;
+    // Current generation (docs/system-design/08-ai-and-cost.md): Haiku 5.5 costs a tenth of Haiku 4.5, Sonnet 5.5
+    // the same as Sonnet 5. ANTHROPIC_FAST_MODEL / ANTHROPIC_STRONG_MODEL override them, e.g. to roll back.
+    this.fastModel = config.fastModel || 'claude-haiku-5-5';
+    this.strongModel = config.strongModel || 'claude-sonnet-5-5';
+    this.timeoutMs = config.timeoutMs || 60_000;
   }
 
   private getClient(): Anthropic {
@@ -202,8 +209,9 @@ export class AnthropicLlmAdapter implements LLMPort {
       try {
         response = await client.messages.create({
           model,
-          max_tokens: 4096,
-          temperature: req.temperature ?? 0.0,
+          // Room for adaptive thinking (on by default on Claude Haiku 5.5 and Sonnet 5.5) as well as the JSON
+          // answer. No temperature: these models reject sampling parameters, as does API version 2026-10-21.
+          max_tokens: 16_000,
           system: systemPrompt,
           messages,
         });

@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { ShellProvider } from '@/components/shell/shell-context';
+import { useParams, usePathname, useRouter } from 'next/navigation';
+import { isReadOnlyRole } from '@workspace/core';
+import { ShellProvider, isProgressViewPath } from '@/components/shell/shell-context';
 import { Sidebar, OrgSummary } from '@/components/shell/sidebar';
 import { TopBar } from '@/components/shell/top-bar';
-import { SettingsDrawer } from '@/components/shell/settings-drawer';
 import { HelpDrawer } from '@/components/shell/help-drawer';
 import { ShortcutsDialog } from '@/components/shell/shortcuts-dialog';
 import { CommandLauncher } from '@/components/shell/command-launcher';
@@ -18,72 +18,47 @@ export default function OrgLayout({
 }) {
   const params = useParams();
   const router = useRouter();
+  const pathname = usePathname();
   const orgId = params?.orgId as string;
 
-  const [loading, setLoading] = useState(true);
-  const [currentOrg, setCurrentOrg] = useState<OrgSummary>({
-    id: orgId,
-    name: 'Workspace Organization',
-    slug: 'org',
-    plan: 'starter',
-    role: 'member',
-  });
+  const [currentOrg, setCurrentOrg] = useState<OrgSummary | null>(null);
   const [availableOrgs, setAvailableOrgs] = useState<OrgSummary[]>([]);
-  const [user, setUser] = useState<UserSessionInfo>({
-    id: 'user-default',
-    email: 'user@workspace-v1.local',
-    name: 'Workspace Member',
-    role: 'member',
-  });
+  const [user, setUser] = useState<UserSessionInfo | null>(null);
 
+  // The shell renders straight away (pages fetch in parallel); the sidebar shows placeholders
+  // until the session and organizations arrive, and an expired session goes back to sign-in.
   useEffect(() => {
     async function initSessionAndOrg() {
       try {
-        const sessionRes = await fetch('/api/auth/session');
-        if (!sessionRes.ok) {
-          router.push('/auth/login');
-          return;
-        }
-        const sessionData = await sessionRes.json();
-        if (!sessionData.authenticated || !sessionData.user) {
-          router.push('/auth/login');
+        const [sessionRes, orgRes] = await Promise.all([fetch('/api/auth/session'), fetch('/api/orgs')]);
+        const sessionData = sessionRes.ok ? await sessionRes.json() : null;
+        if (!sessionData?.authenticated || !sessionData.user) {
+          router.push(`/auth/login?returnTo=${encodeURIComponent(window.location.pathname)}`);
           return;
         }
 
-        // Shape returned by GET /api/auth/session: { authenticated, user: { id, email }, role, ... }
-        const sess = { userId: sessionData.user.id, email: sessionData.user.email, role: sessionData.role };
-        setUser({
-          id: sess.userId,
-          email: sess.email,
-          name: sess.email.split('@')[0],
-          role: sess.role,
-        });
-
-        // Fetch user's organizations
-        const orgRes = await fetch('/api/orgs');
+        // Shape returned by GET /api/auth/session: { authenticated, user: { id, email }, role, ... }. The session's
+        // role is for the organization active when it was issued; this organization's own role wins below.
+        let role: string = sessionData.role;
         if (orgRes.ok) {
           const orgData = await orgRes.json();
           const orgList: OrgSummary[] = (orgData.organizations || []).map(
             (o: { orgId: string; orgName: string; orgSlug: string; plan?: string; role?: string }) => ({
               id: o.orgId,
-            name: o.orgName,
-            slug: o.orgSlug,
-            plan: o.plan || 'starter',
-            role: o.role || 'member',
-          }));
-
+              name: o.orgName,
+              slug: o.orgSlug,
+              plan: o.plan || 'starter',
+              role: o.role || 'member',
+            })
+          );
           setAvailableOrgs(orgList);
-          const found = orgList.find((o) => o.id === orgId);
-          if (found) {
-            setCurrentOrg(found);
-          } else if (orgList.length > 0) {
-            setCurrentOrg(orgList[0]);
-          }
+          const current = orgList.find((o) => o.id === orgId);
+          setCurrentOrg(current ?? orgList[0] ?? null);
+          if (current) role = current.role;
         }
+        setUser({ id: sessionData.user.id, email: sessionData.user.email, role });
       } catch (err) {
         console.error('Failed to initialize session/org context:', err);
-      } finally {
-        setLoading(false);
       }
     }
 
@@ -92,46 +67,34 @@ export default function OrgLayout({
     }
   }, [orgId, router]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-canvas text-foreground flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 rounded-full border-2 border-accent border-t-transparent animate-spin" />
-          <span className="text-xs text-muted-foreground font-mono">Loading Workspace...</span>
-        </div>
-      </div>
-    );
-  }
+  // Executives and Clients stay on the Progress view their Owner gave them.
+  const lockedOut = Boolean(user && isReadOnlyRole(user.role) && !isProgressViewPath(pathname, orgId));
+  useEffect(() => {
+    if (lockedOut) router.replace(`/orgs/${orgId}/progress`);
+  }, [lockedOut, orgId, router]);
 
   return (
-    <ShellProvider>
-      <div className="min-h-screen bg-canvas text-foreground flex">
-        {/* Desktop Sidebar & Mobile Drawer */}
-        <Sidebar
-          currentOrg={currentOrg}
-          availableOrgs={availableOrgs}
-          user={user}
-        />
+    <ShellProvider orgId={orgId} user={user}>
+      <a
+        href="#main"
+        className="sr-only z-[60] rounded-md bg-surface px-3 py-2 text-sm font-medium text-fg shadow-lg focus:not-sr-only focus:fixed focus:left-3 focus:top-3"
+      >
+        Skip to content
+      </a>
+      <div className="flex min-h-screen">
+        <Sidebar currentOrg={currentOrg} availableOrgs={availableOrgs} user={user} />
 
-        {/* Main Content Area */}
-        <div className="flex-1 flex flex-col min-w-0 min-h-screen">
-          <TopBar
-            orgId={currentOrg.id}
-            orgName={currentOrg.name}
-            projectName="Core Workspace"
-          />
-
-          <main className="flex-1 p-4 lg:p-8 max-w-7xl w-full mx-auto">
-            {children}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <TopBar />
+          <main id="main" tabIndex={-1} className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 outline-none sm:px-6 lg:px-8 lg:py-8">
+            {lockedOut ? null : children}
           </main>
         </div>
-
-        {/* Global Drawers & Modals */}
-        <SettingsDrawer />
-        <HelpDrawer />
-        <ShortcutsDialog />
-        <CommandLauncher />
       </div>
+
+      <HelpDrawer />
+      <ShortcutsDialog />
+      <CommandLauncher />
     </ShellProvider>
   );
 }

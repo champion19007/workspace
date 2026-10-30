@@ -76,7 +76,7 @@ export const memberships = pgTable(
   {
     orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
     userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-    role: varchar('role', { length: 32 }).notNull().default('member'), // owner | admin | member | viewer
+    role: varchar('role', { length: 32 }).notNull().default('member'), // owner | admin | member | viewer | client
     sessionEpoch: integer('session_epoch').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -85,7 +85,7 @@ export const memberships = pgTable(
     primaryKey({ columns: [table.orgId, table.userId] }),
     uniqueIndex('idx_memberships_org_user').on(table.orgId, table.userId),
     index('idx_memberships_user_id').on(table.userId),
-    check('chk_membership_role', sql`${table.role} IN ('owner', 'admin', 'member', 'viewer')`),
+    check('chk_membership_role', sql`${table.role} IN ('owner', 'admin', 'member', 'viewer', 'client')`),
   ]
 );
 
@@ -154,6 +154,7 @@ export const tasks = pgTable(
     status: varchar('status', { length: 32 }).notNull().default('todo'), // todo | in_progress | done | blocked
     priority: varchar('priority', { length: 32 }).notNull().default('medium'), // low | medium | high | urgent
     assigneeId: uuid('assignee_id').references(() => users.id, { onDelete: 'set null' }),
+    startDate: date('start_date'), // planned start, for the Timeline
     dueDate: date('due_date'), // date-only distinct from timestamptz
     rank: varchar('rank', { length: 128 }).notNull().default('a0'), // base-62 fractional index string (C collation)
     version: integer('version').notNull().default(1), // If-Match concurrency version
@@ -174,6 +175,7 @@ export const tasks = pgTable(
     index('idx_tasks_project_archived').on(table.projectId, table.archivedAt),
     index('idx_tasks_parent').on(table.parentTaskId),
     check('chk_task_status', sql`${table.status} IN ('todo', 'in_progress', 'done', 'blocked')`),
+    check('chk_task_start_before_due', sql`${table.startDate} IS NULL OR ${table.dueDate} IS NULL OR ${table.startDate} <= ${table.dueDate}`),
     check('chk_task_priority', sql`${table.priority} IN ('low', 'medium', 'high', 'urgent')`),
     check('chk_task_no_self_parent', sql`${table.parentTaskId} IS NULL OR ${table.parentTaskId} != ${table.id}`),
   ]
@@ -615,6 +617,29 @@ export const notifications = pgTable(
   ]
 );
 
+// 17b. Files (project files and task attachments; the bytes live in the blob store)
+export const files = pgTable(
+  'files',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    nodeId: uuid('node_id').notNull(),
+    taskId: uuid('task_id'),
+    name: varchar('name', { length: 255 }).notNull(),
+    contentType: varchar('content_type', { length: 255 }).notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    storageKey: varchar('storage_key', { length: 1024 }).notNull(),
+    uploadedBy: uuid('uploaded_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('idx_files_node_created').on(table.nodeId, table.createdAt),
+    index('idx_files_task').on(table.taskId),
+    check('chk_files_size', sql`${table.sizeBytes} >= 0`),
+  ]
+);
+
 // 18. Chunks (Vector Chunks for Ask AI)
 export const chunks = pgTable(
   'chunks',
@@ -807,7 +832,7 @@ export const invitations = pgTable(
   },
   (table) => [
     index('idx_invitations_org_email').on(table.orgId, table.email),
-    check('chk_invitations_role', sql`${table.role} IN ('owner', 'admin', 'member', 'viewer')`),
+    check('chk_invitations_role', sql`${table.role} IN ('owner', 'admin', 'member', 'viewer', 'client')`),
   ]
 );
 

@@ -5,9 +5,12 @@ import {
   ConflictError,
   PreconditionFailedError,
   generateUuidV7,
+  getKolkataTodayDateString,
+  type NodeRollupDTO,
+  isReadOnlyRole,
 } from '@workspace/core';
 import { insertOutboxEvent } from './outbox-operations.js';
-import { markNodesDirty } from './rollup-operations.js';
+import { ensureFreshProjectRollup, markNodesDirty } from './rollup-operations.js';
 import { tenantSql, type DbOrSql } from './client.js';
 
 export type { DbOrSql };
@@ -156,7 +159,7 @@ export async function createNode(
   }
 
   // Only Owners and Admins can create teams or manage structure
-  if (role === 'viewer') {
+  if (isReadOnlyRole(role)) {
     throw new ForbiddenError('Viewers are not authorized to create nodes');
   }
 
@@ -452,6 +455,27 @@ export async function listProjects(
 
   const rows = await query;
 
+  // Health shown in lists (sidebar, Home, project header) must not lag behind task changes.
+  if (rows.length > 0) {
+    const ids = rows.map((r) => r.id as string);
+    const dirtyRows = await sql<{ nodeId: string; generation: number }[]>`
+      SELECT node_id AS "nodeId", dirty_generation AS "generation"
+      FROM node_rollup_dirty
+      WHERE org_id = ${orgId} AND node_id = ANY(${ids}::uuid[])
+    `;
+    const dirty = new Map(dirtyRows.map((d) => [d.nodeId, d.generation]));
+    const dateContext = getKolkataTodayDateString();
+    for (const r of rows) {
+      r.rollup = await ensureFreshProjectRollup(sql, {
+        orgId,
+        projectId: r.id,
+        cached: (r.rollup as NodeRollupDTO | null) ?? null,
+        dirtyGeneration: dirty.get(r.id) ?? null,
+        dateContext,
+      });
+    }
+  }
+
   const [countResult] = await sql`
     SELECT count(*)::int as total
     FROM nodes n
@@ -503,7 +527,7 @@ export async function updateNode(
   const sql = tenantSql(target, { orgId: input.orgId, userId: input.actorUserId, role: input.role });
   const { orgId, nodeId, actorUserId, role, ifMatchVersion, name, description, visibility } = input;
 
-  if (role === 'viewer') {
+  if (isReadOnlyRole(role)) {
     throw new ForbiddenError('Viewers are not authorized to modify nodes');
   }
 
@@ -895,6 +919,9 @@ export async function addNodeMember(
   const sql = tenantSql(target, { orgId: params.orgId, userId: params.actorUserId, role: params.role });
   const { orgId, nodeId, targetUserId, actorUserId, role } = params;
 
+  if (isReadOnlyRole(role)) {
+    throw new ForbiddenError('Executives and clients cannot change who is on a project');
+  }
   if (role !== 'owner' && role !== 'admin') {
     // Only Owners, Admins, or existing private members can add members
     const isMember = await canUserAccessNode(sql, { orgId, nodeId, userId: actorUserId, role });
@@ -909,6 +936,10 @@ export async function addNodeMember(
   `;
   if (!membership) {
     throw new NotFoundError('Target user is not a member of this organization');
+  }
+  // A client sees exactly the projects they are added to, so only Owners and Managers decide that.
+  if (membership.role === 'client' && role !== 'owner' && role !== 'admin') {
+    throw new ForbiddenError('Only Owners and Managers can give a client access to a project');
   }
 
   // Ensure node exists and is in org

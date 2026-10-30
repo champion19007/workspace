@@ -1,170 +1,154 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Send, Bot, User, ShieldAlert, ArrowUpRight } from 'lucide-react';
+import React, { useId, useState } from 'react';
+import Link from 'next/link';
+import { useParams } from 'next/navigation';
+import { FileText, FolderKanban, ListTodo, Send } from 'lucide-react';
+import type { AskAiAnswerDTO, AskAiSourceDTO } from '@workspace/core';
+import { PageHeader } from '@/components/ui/page-header';
+import { Alert } from '@/components/ui/states';
 
-interface ChatMessage {
-  id: string;
-  sender: 'user' | 'assistant';
-  content: string;
-  citations?: string[];
-  timestamp: string;
+const EXAMPLES = ["What's late right now?", 'Which projects need attention, and why?', 'What got finished this week?'];
+const KIND_ICON = { project: FolderKanban, task: ListTodo, doc: FileText };
+
+interface Turn {
+  question: string;
+  answer?: AskAiAnswerDTO;
+  error?: string;
 }
 
+/** The answer with each [n] turned into a link to that source. */
+function AnswerText({ text, sources }: { text: string; sources: AskAiSourceDTO[] }) {
+  const byNumber = new Map(sources.map((s) => [String(s.n), s]));
+  return (
+    <p className="whitespace-pre-wrap text-sm leading-relaxed text-fg">
+      {text.split(/(\[\d+\])/).map((part, i) => {
+        const source = byNumber.get(part.slice(1, -1));
+        return source && /^\[\d+\]$/.test(part) ? (
+          <Link key={i} href={source.href} title={source.title} className="font-medium text-accent-text hover:underline">
+            {part}
+          </Link>
+        ) : (
+          part
+        )
+      })}
+    </p>
+  );
+}
+
+/** Questions about your projects, answered only from what you can see here, with links to the sources. */
 export default function AskAiPage() {
+  const orgId = useParams()?.orgId as string;
+  const ids = useId();
+  const [question, setQuestion] = useState('');
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [asking, setAsking] = useState(false);
 
-  const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 'msg-1',
-      sender: 'assistant',
-      content:
-        'Hello! I am your Workspace v1 assistant. I can help search across your organization’s meetings, transcripts, notes, and task system of record with strict tenant isolation.',
-      timestamp: 'Just now',
-    },
-  ]);
-
-  const promptSuggestions = [
-    'What action items were agreed upon in yesterday’s platform sync?',
-    'Summarize open tasks in Platform Core & Multi-Tenancy',
-    'Who is assigned to the Fastify API contract review?',
-  ];
-
-  const handleSend = (textToSend?: string) => {
-    const text = textToSend || input;
-    if (!text.trim()) return;
-
-    const userMsg: ChatMessage = {
-      id: `u-${Date.now()}`,
-      sender: 'user',
-      content: text.trim(),
-      timestamp: 'Just now',
-    };
-
-    const assistantReply: ChatMessage = {
-      id: `a-${Date.now()}`,
-      sender: 'assistant',
-      content:
-        'Under Stage 21 (P1 Feature), I will execute a hybrid search (pgvector cosine + tsvector GIN) across verified organization chunks, generating answers with strict evidence citations.',
-      citations: ['chunk:019318ef-0001', 'chunk:019318ef-0004'],
-      timestamp: 'Just now',
-    };
-
-    setMessages((prev) => [...prev, userMsg, assistantReply]);
-    setInput('');
+  const ask = async (q: string) => {
+    const text = q.trim();
+    if (text.length < 3 || asking) return;
+    setAsking(true);
+    setQuestion('');
+    setTurns((prev) => [{ question: text }, ...prev]);
+    let turn: Turn;
+    try {
+      const res = await fetch(`/api/orgs/${orgId}/ai/ask`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: text }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.detail || "Couldn't get an answer.");
+      turn = { question: text, answer: body };
+    } catch (err) {
+      turn = { question: text, error: (err as Error).message };
+    }
+    setTurns((prev) => [turn, ...prev.slice(1)]);
+    setAsking(false);
   };
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto animate-in fade-in duration-200">
-      {/* P1 Feature Warning Banner (Screenshot 943 reference) */}
-      <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3">
-        <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-        <div className="text-xs">
-          <div className="font-bold text-amber-300">
-            P1 Feature Preview: Ask AI Assistant
-          </div>
-          <p className="text-amber-200/80 mt-0.5 leading-relaxed">
-            This capability is preserved for Stage 21 per the product requirements. Full
-            hybrid search and evidence citation validation will be wired to the vector database.
-          </p>
-        </div>
-      </div>
+    <div className="max-w-3xl space-y-6">
+      <PageHeader
+        title="Ask AI"
+        description="Ask about your projects in plain words. Answers come only from what you can see here, with links to where each fact comes from."
+      />
 
-      {/* Main Chat Container */}
-      <div className="rounded-2xl bg-panel border border-border-subtle flex flex-col h-[580px] overflow-hidden shadow-xl">
-        {/* Chat Messages */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex items-start gap-3 ${
-                msg.sender === 'user' ? 'flex-row-reverse' : ''
-              }`}
-            >
-              <div
-                className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                  msg.sender === 'user'
-                    ? 'bg-accent text-accent-foreground font-bold'
-                    : 'bg-panel-inset border border-border-subtle text-accent'
-                }`}
-              >
-                {msg.sender === 'user' ? (
-                  <User className="w-4 h-4" />
-                ) : (
-                  <Bot className="w-4 h-4" />
-                )}
-              </div>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          ask(question);
+        }}
+        className="flex gap-2"
+      >
+        <label htmlFor={`${ids}-q`} className="sr-only">
+          Your question
+        </label>
+        <input
+          id={`${ids}-q`}
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          maxLength={500}
+          placeholder="For example: what's late on the website project?"
+          className="field"
+        />
+        <button type="submit" disabled={asking || question.trim().length < 3} className="btn btn-primary shrink-0">
+          <Send aria-hidden="true" />
+          {asking ? 'Thinking…' : 'Ask'}
+        </button>
+      </form>
 
-              <div
-                className={`max-w-lg p-3.5 rounded-2xl text-xs space-y-2 leading-relaxed ${
-                  msg.sender === 'user'
-                    ? 'bg-accent text-accent-foreground font-medium rounded-tr-none'
-                    : 'bg-panel-elevated border border-border-subtle text-foreground rounded-tl-none'
-                }`}
-              >
-                <p>{msg.content}</p>
-
-                {msg.citations && msg.citations.length > 0 && (
-                  <div className="pt-2 border-t border-border-subtle/60 flex items-center gap-1.5 flex-wrap">
-                    <span className="text-[10px] text-muted-foreground uppercase font-bold">
-                      Grounding Citations:
-                    </span>
-                    {msg.citations.map((c, idx) => (
-                      <span
-                        key={idx}
-                        className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-panel-inset text-accent border border-border-subtle"
-                      >
-                        [{c}]
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Suggested Prompts */}
-        <div className="px-5 py-2.5 bg-panel-inset/50 border-t border-border-subtle flex items-center gap-2 overflow-x-auto">
-          <span className="text-[10px] font-semibold text-muted-foreground uppercase shrink-0">
-            Suggested:
-          </span>
-          {promptSuggestions.map((prompt, idx) => (
-            <button
-              key={idx}
-              onClick={() => handleSend(prompt)}
-              className="text-[11px] text-muted-foreground hover:text-foreground bg-panel border border-border-subtle hover:border-accent/40 px-2.5 py-1 rounded-lg shrink-0 transition-colors flex items-center gap-1"
-            >
-              <span>{prompt}</span>
-              <ArrowUpRight className="w-3 h-3 text-accent" />
+      {turns.length === 0 && (
+        <div className="flex flex-wrap gap-2">
+          {EXAMPLES.map((q) => (
+            <button key={q} type="button" onClick={() => ask(q)} className="btn btn-secondary btn-sm">
+              {q}
             </button>
           ))}
         </div>
+      )}
 
-        {/* Input Bar */}
-        <div className="p-4 bg-panel-inset border-t border-border-subtle flex items-center gap-2">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-            placeholder="Ask about meetings, notes, or tasks across your organization..."
-            className="flex-1 bg-panel border border-border-subtle px-3.5 py-2.5 rounded-xl text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-          />
-          <button
-            onClick={() => handleSend()}
-            aria-label="Send message"
-            className="p-2.5 rounded-xl bg-accent text-accent-foreground font-bold hover:opacity-90 transition-opacity"
-          >
-            <Send className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+      <ol className="space-y-4" aria-live="polite">
+        {turns.map((t, i) => (
+          <li key={turns.length - i} className="card space-y-3 p-5">
+            <p className="text-sm font-medium text-fg">{t.question}</p>
+            {t.error ? (
+              <Alert>{t.error}</Alert>
+            ) : !t.answer ? (
+              <div role="status" className="skeleton h-12 w-full">
+                <span className="sr-only">Looking for an answer…</span>
+              </div>
+            ) : (
+              <>
+                {t.answer.demo && (
+                  <p className="text-xs font-medium text-warning">Demo answer: no AI key is set on this server.</p>
+                )}
+                <AnswerText text={t.answer.answer} sources={t.answer.sources} />
+                {t.answer.sources.length > 0 && (
+                  <ul className="space-y-1 border-t border-border pt-3">
+                    {t.answer.sources.map((s) => {
+                      const Icon = KIND_ICON[s.kind];
+                      return (
+                        <li key={s.n} className="flex items-center gap-2 text-sm">
+                          <span className="w-6 shrink-0 text-xs tabular-nums text-fg-subtle">[{s.n}]</span>
+                          <Icon className="h-4 w-4 shrink-0 text-fg-subtle" aria-hidden="true" />
+                          <Link href={s.href} className="truncate text-fg hover:underline">
+                            {s.title}
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </>
+            )}
+          </li>
+        ))}
+      </ol>
+
+      <p className="text-xs text-fg-muted">
+        Answers are written by AI from your projects, tasks and docs. Check anything important with the team.
+      </p>
     </div>
   );
 }

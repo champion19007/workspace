@@ -305,7 +305,6 @@ export async function evaluateAndRouteMeeting(
       promptId: 'route.project',
       promptVersion: '1.0',
       tier: 'fast',
-      temperature: 0,
       orgGlossary,
       schema: ProjectRoutingResultSchema,
       systemPrefix: [

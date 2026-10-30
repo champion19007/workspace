@@ -70,15 +70,6 @@ export class ControllableMockAuthAdapter implements AuthPort {
       used: false,
     });
 
-    // Also store by predictable test code if it's a known test user
-    if (email === 'test@workspace.dev' || email === 'owner@workspace.dev') {
-      this.pendingChallenges.set('123456', {
-        email,
-        codeOrToken: '123456',
-        expiresAt: this.currentTimeMs + ttlMs,
-        used: false,
-      });
-    }
 
     return {
       messageId: `mock-msg-${this.currentTimeMs}`,
@@ -92,8 +83,8 @@ export class ControllableMockAuthAdapter implements AuthPort {
 
     const challenge = this.pendingChallenges.get(tokenOrCode);
     if (!challenge) {
-      // Allow fallback default token in mock test mode if starts with "valid-"
-      if (tokenOrCode.startsWith('valid-')) {
+      // Mock sign-in: any "valid-" token, or the code 123456, signs in whoever's email is given.
+      if (tokenOrCode.startsWith('valid-') || tokenOrCode === '123456') {
         return this.createMockAuthResult(email);
       }
       throw new UnauthorizedError('Invalid or expired login link');
@@ -219,6 +210,15 @@ export interface SupabaseAuthConfig {
   serviceRoleKey?: string;
 }
 
+// Sign-in uses Supabase's PKCE flow: the provider redirects back with ?code=, which the server can read
+// (the implicit flow puts tokens in the URL #fragment, which never reaches the server). GoTrue keeps the
+// PKCE verifier in client storage; each sign-in step gets its own in-memory store, and that store travels
+// from the start to the callback as an opaque string (the web app keeps it in an httpOnly cookie).
+const PKCE_STORAGE_KEY = 'workspace-auth';
+
+const packPkceState = (store: Map<string, string>) => (store.size ? JSON.stringify(Object.fromEntries(store)) : undefined);
+const unpackPkceState = (state: string) => new Map(Object.entries(JSON.parse(state) as Record<string, string>));
+
 export class SupabaseAuthAdapter implements AuthPort {
   public readonly provider = 'supabase';
   private readonly client: SupabaseClient;
@@ -240,9 +240,35 @@ export class SupabaseAuthAdapter implements AuthPort {
     });
   }
 
-  async requestPasswordless(input: PasswordlessRequestInput): Promise<{ messageId?: string; sent: boolean }> {
+  private pkceClient(store = new Map<string, string>()) {
+    const client = createClient(this.config.supabaseUrl!, this.config.anonKey!, {
+      auth: {
+        flowType: 'pkce',
+        // GoTrue only uses a custom storage when persisting; this store lives for one request.
+        persistSession: true,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        storageKey: PKCE_STORAGE_KEY,
+        storage: {
+          getItem: (key: string) => store.get(key) ?? null,
+          setItem: (key: string, value: string) => {
+            store.set(key, value);
+          },
+          removeItem: (key: string) => {
+            store.delete(key);
+          },
+        },
+      },
+    });
+    return { client, store };
+  }
+
+  async requestPasswordless(
+    input: PasswordlessRequestInput
+  ): Promise<{ messageId?: string; sent: boolean; codeVerifier?: string }> {
     const email = input.email.toLowerCase().trim();
-    const { error } = await this.client.auth.signInWithOtp({
+    const { client, store } = this.pkceClient();
+    const { error } = await client.auth.signInWithOtp({
       email,
       options: {
         emailRedirectTo: input.redirectUrl,
@@ -257,6 +283,7 @@ export class SupabaseAuthAdapter implements AuthPort {
     return {
       messageId: `supabase-otp-${Date.now()}`,
       sent: true,
+      codeVerifier: packPkceState(store),
     };
   }
 
@@ -291,13 +318,14 @@ export class SupabaseAuthAdapter implements AuthPort {
     };
   }
 
-  async getOAuthUrl(input: OAuthUrlInput): Promise<{ url: string; state?: string }> {
-    const { data, error } = await this.client.auth.signInWithOAuth({
+  async getOAuthUrl(input: OAuthUrlInput): Promise<{ url: string; state?: string; codeVerifier?: string }> {
+    const { client, store } = this.pkceClient();
+    const { data, error } = await client.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: input.redirectUrl,
         scopes: 'email profile',
-        queryParams: input.state ? { state: input.state } : undefined,
+        skipBrowserRedirect: true,
       },
     });
 
@@ -308,11 +336,22 @@ export class SupabaseAuthAdapter implements AuthPort {
     return {
       url: data.url,
       state: input.state,
+      codeVerifier: packPkceState(store),
     };
   }
 
   async exchangeOAuthCode(input: OAuthExchangeInput): Promise<{ user: AuthUser; tokens: AuthTokens }> {
-    const { data, error } = await this.client.auth.exchangeCodeForSession(input.code);
+    if (!input.codeVerifier) {
+      throw new UnauthorizedError('Sign-in has to finish in the browser that started it');
+    }
+    let store: Map<string, string>;
+    try {
+      store = unpackPkceState(input.codeVerifier);
+    } catch {
+      throw new UnauthorizedError('Sign-in state is unreadable; start again');
+    }
+    const { client } = this.pkceClient(store);
+    const { data, error } = await client.auth.exchangeCodeForSession(input.code);
 
     if (error || !data.user || !data.session) {
       throw new UnauthorizedError(error?.message ?? 'Failed to exchange authorization code');

@@ -1,7 +1,12 @@
 import { z } from 'zod';
 import { AuthorizationError } from '../errors/index.js';
 
-export const OrgRoleSchema = z.enum(['owner', 'admin', 'member', 'viewer']);
+/**
+ * Organization roles. The app presents them as access levels: owner = Owner, admin = Manager,
+ * member = Developer, viewer = Executive (reads every project), client = Client (reads only the
+ * projects they were added to; enforced by row-level security from migration 0016).
+ */
+export const OrgRoleSchema = z.enum(['owner', 'admin', 'member', 'viewer', 'client']);
 export type OrgRole = z.infer<typeof OrgRoleSchema>;
 
 export const ROLE_HIERARCHY: Record<OrgRole, number> = {
@@ -9,7 +14,13 @@ export const ROLE_HIERARCHY: Record<OrgRole, number> = {
   admin: 3,
   member: 2,
   viewer: 1,
+  client: 0,
 };
+
+/** Executives (viewer) and clients can look but never change anything. */
+export function isReadOnlyRole(role: string | null | undefined): boolean {
+  return role === 'viewer' || role === 'client';
+}
 
 /**
  * Checks if the actor has equal or greater authority than the required role.
@@ -36,7 +47,7 @@ export function canInviteOrAssignRole(actorRole: OrgRole, targetRole: OrgRole): 
     return true; // Owner can invite any role
   }
   if (actorRole === 'admin') {
-    return targetRole === 'member' || targetRole === 'viewer';
+    return targetRole === 'member' || targetRole === 'viewer' || targetRole === 'client';
   }
   return false;
 }
@@ -84,7 +95,7 @@ export function canRemoveMember(
     return true;
   }
   if (actorRole === 'admin') {
-    return targetUserRole === 'member' || targetUserRole === 'viewer';
+    return targetUserRole === 'member' || targetUserRole === 'viewer' || targetUserRole === 'client';
   }
   return false;
 }

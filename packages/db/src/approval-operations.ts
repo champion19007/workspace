@@ -18,6 +18,8 @@ import {
   type PageInfo,
   type TaskDTO,
   type UpdateTaskInput,
+  APP_TIME_ZONE,
+  isReadOnlyRole,
 } from '@workspace/core';
 import { tenantSql, withTenantContext } from './client.js';
 import { authorizeMeetingAccess } from './meeting-intake-operations.js';
@@ -167,7 +169,7 @@ function mapActionItemRow(r: any, viewer: ActionItemViewer): ActionItemDTO {
     consentWithdrawn: !!r.consent_withdrawn,
     canDecide:
       viewer.role !== null &&
-      viewer.role !== 'viewer' &&
+      !isReadOnlyRole(viewer.role) &&
       r.state === 'suggested' &&
       validationStatus === 'valid' &&
       !r.superseded &&
@@ -221,7 +223,7 @@ export async function authorizeActionItemAccess(
     action: 'read',
   });
   if (!auth.authorized) throw new NotFoundError('Action item not found');
-  if (params.action === 'decide' && params.role === 'viewer') {
+  if (params.action === 'decide' && isReadOnlyRole(params.role)) {
     throw new ForbiddenError('Viewers cannot decide AI suggestions');
   }
   return { meetingId: item.meeting_id };
@@ -336,7 +338,7 @@ export async function decideActionItem(sql: Sql, params: DecideActionItemParams)
     const [meeting] = await tx<any[]>`
       SELECT id, title, node_id, status, skipped, processing_generation, zoom_host_id,
              guests_present, guest_consent_status,
-             TO_CHAR(COALESCE(actual_start_at, scheduled_start_at, created_at) AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS meeting_date
+             TO_CHAR(COALESCE(actual_start_at, scheduled_start_at, created_at) AT TIME ZONE ${APP_TIME_ZONE}, 'YYYY-MM-DD') AS meeting_date
       FROM meetings
       WHERE org_id = ${orgId} AND id = ${meetingId}
       FOR SHARE

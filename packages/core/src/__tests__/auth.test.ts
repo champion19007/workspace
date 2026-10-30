@@ -19,6 +19,7 @@ import {
   canModifyMemberRole,
   canRemoveMember,
   canDeleteOrg,
+  isReadOnlyRole,
   generateInvitationToken,
 } from '../index.js';
 
@@ -282,6 +283,16 @@ describe('Auth Domain Core Logic', () => {
       expect(canDeleteOrg('admin')).toBe(false);
       expect(canDeleteOrg('member')).toBe(false);
       expect(canDeleteOrg('viewer')).toBe(false);
+    });
+
+    it('treats Executives (viewer) and Clients as read-only levels that Managers can hand out', () => {
+      expect(['owner', 'admin', 'member'].map(isReadOnlyRole)).toEqual([false, false, false]);
+      expect(['viewer', 'client'].map(isReadOnlyRole)).toEqual([true, true]);
+      expect(hasMinimumRole('client', 'viewer')).toBe(false);
+      expect(canInviteOrAssignRole('admin', 'client')).toBe(true);
+      expect(canRemoveMember('admin', 'client', false)).toBe(true);
+      expect(canInviteOrAssignRole('client', 'client')).toBe(false);
+      expect(canManageMembers('client')).toBe(false);
     });
   });
 

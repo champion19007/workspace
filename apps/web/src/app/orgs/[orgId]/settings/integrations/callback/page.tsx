@@ -1,18 +1,15 @@
 'use client';
 
 import React, { useEffect, useState, use } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { CheckCircle2, AlertTriangle, Loader2, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
 
-export default function ZoomOAuthCallbackPage({
-  params,
-}: {
-  params: Promise<{ orgId: string }>;
-}) {
+export default function ZoomOAuthCallbackPage({ params }: { params: Promise<{ orgId: string }> }) {
   const { orgId } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();
+  const settingsHref = `/orgs/${orgId}/settings?tab=integrations`;
 
   const [status, setStatus] = useState<'exchanging' | 'success' | 'error'>('exchanging');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -24,13 +21,13 @@ export default function ZoomOAuthCallbackPage({
 
     if (error) {
       setStatus('error');
-      setErrorMessage(`Zoom returned error: ${error}`);
+      setErrorMessage(error === 'access_denied' ? 'Access was declined in Zoom.' : `Zoom returned an error: ${error}`);
       return;
     }
 
     if (!code || !state) {
       setStatus('error');
-      setErrorMessage('Missing authorization code or state in callback.');
+      setErrorMessage('The link from Zoom is missing some details. Start connecting again from Settings.');
       return;
     }
 
@@ -44,67 +41,49 @@ export default function ZoomOAuthCallbackPage({
 
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
-          throw new Error(body.message || body.detail || `Callback failed with HTTP ${res.status}`);
+          throw new Error(body.message || body.detail || `Connecting failed (HTTP ${res.status}).`);
         }
 
         setStatus('success');
-        setTimeout(() => {
-          router.push(`/orgs/${orgId}/settings`);
-        }, 1500);
+        setTimeout(() => router.push(settingsHref), 1500);
       } catch (err: unknown) {
         setStatus('error');
-        setErrorMessage(err instanceof Error ? err.message : 'Unknown callback error occurred');
+        setErrorMessage(err instanceof Error ? err.message : 'Something went wrong while connecting Zoom.');
       }
     }
 
     completeOAuth();
-  }, [orgId, router, searchParams]);
+  }, [orgId, router, searchParams, settingsHref]);
 
   return (
-    <div className="min-h-[60vh] flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-panel border border-border-subtle rounded-2xl p-6 space-y-4 text-center">
+    <div className="flex min-h-[60vh] items-center justify-center">
+      <div className="card w-full max-w-md p-6 text-center" aria-live="polite">
         {status === 'exchanging' && (
-          <div className="space-y-3">
-            <Loader2 className="w-8 h-8 animate-spin text-accent mx-auto" />
-            <h2 className="text-sm font-bold text-foreground">
-              Connecting Zoom Account...
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              Verifying cryptographic state and securely storing credentials in managed secret store.
-            </p>
+          <div className="space-y-2">
+            <Loader2 className="mx-auto h-8 w-8 animate-spin text-accent-text" aria-hidden="true" />
+            <h1 className="font-semibold text-fg">Connecting Zoom…</h1>
+            <p className="text-sm text-fg-muted">Finishing sign-in with Zoom. This takes a few seconds.</p>
           </div>
         )}
 
         {status === 'success' && (
-          <div className="space-y-3">
-            <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
-            <h2 className="text-sm font-bold text-foreground">
-              Zoom Successfully Connected!
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              Account identity resolved and hosts synchronized. Redirecting to settings...
+          <div className="space-y-2">
+            <CheckCircle2 className="mx-auto h-8 w-8 text-success" aria-hidden="true" />
+            <h1 className="font-semibold text-fg">Zoom is connected</h1>
+            <p className="text-sm text-fg-muted">
+              Taking you back to <Link href={settingsHref} className="link">Settings</Link>…
             </p>
           </div>
         )}
 
         {status === 'error' && (
-          <div className="space-y-4">
-            <AlertTriangle className="w-8 h-8 text-rose-400 mx-auto" />
-            <h2 className="text-sm font-bold text-foreground">
-              Connection Failed
-            </h2>
-            <p className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-xl p-3">
-              {errorMessage}
-            </p>
-            <div className="pt-2">
-              <Link
-                href={`/orgs/${orgId}/settings`}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-panel-elevated border border-border-subtle hover:bg-border-subtle text-xs font-semibold text-foreground transition-colors"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Return to Settings</span>
-              </Link>
-            </div>
+          <div className="space-y-2" role="alert">
+            <AlertTriangle className="mx-auto h-8 w-8 text-danger" aria-hidden="true" />
+            <h1 className="font-semibold text-fg">Couldn&apos;t connect Zoom</h1>
+            <p className="pb-2 text-sm text-fg-muted">{errorMessage}</p>
+            <Link href={settingsHref} className="btn btn-secondary">
+              Back to Settings
+            </Link>
           </div>
         )}
       </div>

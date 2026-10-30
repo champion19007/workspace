@@ -1,15 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  ShieldCheck,
-  ShieldAlert,
-  RotateCw,
-  CheckCircle2,
-  AlertTriangle,
-  UserCheck,
-} from 'lucide-react';
+import { Loader2, UserCheck } from 'lucide-react';
 import type { ZoomHostConsentDTO } from '@workspace/core';
+import { Badge } from '../ui/badge';
+import { Dialog } from '../ui/dialog';
+import { Alert } from '../ui/states';
 
 interface MyConsentCardProps {
   orgId: string;
@@ -18,6 +14,7 @@ interface MyConsentCardProps {
 export function MyConsentCard({ orgId }: MyConsentCardProps) {
   const [consent, setConsent] = useState<ZoomHostConsentDTO | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmOptOut, setConfirmOptOut] = useState(false);
@@ -25,17 +22,14 @@ export function MyConsentCard({ orgId }: MyConsentCardProps) {
   const fetchMyConsent = useCallback(async () => {
     if (!orgId) return;
     setLoading(true);
-    setError(null);
+    setLoadError(null);
     try {
       const res = await fetch(`/api/orgs/${orgId}/zoom/my-consent`);
       const data = await res.json();
-      if (res.ok) {
-        setConsent(data.consent || null);
-      } else {
-        throw new Error(data.message || 'Failed to fetch personal consent settings');
-      }
+      if (!res.ok) throw new Error(data.message || "Your Zoom preference couldn't be loaded.");
+      setConsent(data.consent || null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setLoadError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
@@ -55,9 +49,7 @@ export function MyConsentCard({ orgId }: MyConsentCardProps) {
         body: JSON.stringify({ consentStatus: newStatus }),
       });
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.message || 'Failed to update consent preferences');
-      }
+      if (!res.ok) throw new Error(data.message || "Your preference couldn't be saved.");
       setConsent(data.consent);
       setConfirmOptOut(false);
     } catch (err) {
@@ -71,125 +63,94 @@ export function MyConsentCard({ orgId }: MyConsentCardProps) {
   const isAdminDisabled = Boolean(consent?.adminDisabled);
 
   return (
-    <div className="bg-panel border border-border-subtle rounded-2xl p-5 lg:p-6 space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center text-accent shrink-0">
-            <UserCheck className="w-5 h-5" />
+    <section className="card space-y-4 p-5" aria-labelledby="my-consent-title">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent-subtle text-accent-text">
+            <UserCheck className="h-5 w-5" aria-hidden="true" />
           </div>
-          <div>
-            <h3 className="text-sm font-bold text-foreground">
-              My Host Recording &amp; Transcription Consent
-            </h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Control whether meetings you host are processed into Workspace transcripts and action items.
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 id="my-consent-title" className="font-semibold text-fg">
+                Meetings you host
+              </h2>
+              {!loading && !loadError && (isOptedIn ? <Badge variant="success">Importing</Badge> : <Badge>Not importing</Badge>)}
+            </div>
+            <p className="text-sm text-fg-muted">
+              {isOptedIn
+                ? 'Transcripts of Zoom meetings you host are imported, credited to you and filed under a project.'
+                : 'Zoom meetings you host are not imported. Opt in to get notes and suggested tasks from them.'}
             </p>
+            {isOptedIn && consent?.consentTimestamp && (
+              <p className="text-xs text-fg-muted">You opted in on {new Date(consent.consentTimestamp).toLocaleDateString()}.</p>
+            )}
           </div>
         </div>
 
-        <div>
-          {loading ? (
-            <span className="text-xs text-muted-foreground flex items-center gap-1.5">
-              <RotateCw className="w-3.5 h-3.5 animate-spin" /> Loading...
-            </span>
-          ) : isOptedIn ? (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Processing Active (Opted In)
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-zinc-500/10 text-zinc-400 border border-zinc-500/20">
-              <ShieldAlert className="w-3.5 h-3.5" />
-              Processing Inactive (Opted Out)
-            </span>
-          )}
-        </div>
-      </div>
-
-      {isAdminDisabled && (
-        <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-          <span>
-            Meeting transcription has been administratively disabled for your account by an organization Owner.
-          </span>
-        </div>
-      )}
-
-      {error && (
-        <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs">
-          {error}
-        </div>
-      )}
-
-      <div className="p-3.5 rounded-xl bg-panel-inset border border-border-subtle text-xs space-y-2">
-        <div className="text-muted-foreground leading-relaxed">
-          {isOptedIn ? (
-            <span>
-              You have consented to automated intake. Transcripts for meetings where you are the host will be ingested,
-              attributed to you, and queued for project routing.
-              {consent?.consentTimestamp && (
-                <span className="block mt-1 font-mono text-[11px] text-muted-foreground/80">
-                  Consent recorded: {new Date(consent.consentTimestamp).toLocaleString()}
-                </span>
-              )}
-            </span>
-          ) : (
-            <span>
-              Your meetings are currently excluded from transcript ingestion and downstream AI extraction.
-              Recordings you host will not be ingested by Workspace v1.
-            </span>
-          )}
-        </div>
-
-        {/* Action Toggle */}
-        <div className="pt-2 border-t border-border-subtle flex items-center justify-between">
-          <span className="text-[11px] font-semibold text-muted-foreground">
-            Self-Service Preference:
-          </span>
-
-          {isOptedIn ? (
-            confirmOptOut ? (
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] text-rose-400">Fence in-flight meetings?</span>
-                <button
-                  type="button"
-                  onClick={() => handleUpdateConsent('opted_out')}
-                  disabled={updating || isAdminDisabled}
-                  className="px-2.5 py-1 rounded-md bg-rose-600 hover:bg-rose-500 text-white font-semibold text-[11px] disabled:opacity-50"
-                >
-                  {updating ? 'Fencing...' : 'Yes, Opt Out'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmOptOut(false)}
-                  className="px-2 py-1 rounded-md border border-border-subtle text-muted-foreground text-[11px]"
-                >
-                  Cancel
-                </button>
-              </div>
+        {!loading && !loadError && (
+          <div className="shrink-0">
+            {isOptedIn ? (
+              <button type="button" onClick={() => setConfirmOptOut(true)} disabled={updating || isAdminDisabled} className="btn btn-secondary btn-sm">
+                Opt out
+              </button>
             ) : (
               <button
                 type="button"
-                onClick={() => setConfirmOptOut(true)}
+                onClick={() => handleUpdateConsent('opted_in')}
                 disabled={updating || isAdminDisabled}
-                className="px-3 py-1.5 rounded-lg border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 font-semibold text-xs transition-colors disabled:opacity-50"
+                className="btn btn-primary btn-sm"
               >
-                Opt Out of Transcription
+                {updating && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                Opt in
               </button>
-            )
-          ) : (
-            <button
-              type="button"
-              onClick={() => handleUpdateConsent('opted_in')}
-              disabled={updating || isAdminDisabled}
-              className="px-3.5 py-1.5 rounded-lg bg-accent text-accent-foreground font-semibold text-xs hover:bg-accent/90 transition-colors disabled:opacity-50 flex items-center gap-1.5"
-            >
-              {updating ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
-              Opt In to Meeting Transcription
-            </button>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
-    </div>
+
+      {loading ? (
+        <div className="skeleton h-4 w-56" aria-hidden="true" />
+      ) : loadError ? (
+        <Alert
+          tone="danger"
+          title="Couldn't load your preference"
+          action={
+            <button type="button" onClick={fetchMyConsent} className="btn btn-secondary btn-sm">
+              Try again
+            </button>
+          }
+        >
+          {loadError}
+        </Alert>
+      ) : null}
+
+      {isAdminDisabled && (
+        <Alert tone="warning">An owner or admin has turned off imports for meetings you host, so this can&apos;t be changed here.</Alert>
+      )}
+      {error && !confirmOptOut && (
+        <Alert tone="danger" onDismiss={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
+
+      <Dialog
+        isOpen={confirmOptOut}
+        onClose={() => !updating && setConfirmOptOut(false)}
+        title="Stop importing your meetings?"
+        description="Meetings you host won't be imported from now on, and imports still in progress for your meetings are skipped."
+        maxWidthClass="max-w-md"
+      >
+        {error && <Alert tone="danger" className="mb-4">{error}</Alert>}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={() => setConfirmOptOut(false)} disabled={updating} className="btn btn-secondary">
+            Cancel
+          </button>
+          <button type="button" onClick={() => handleUpdateConsent('opted_out')} disabled={updating} className="btn btn-danger">
+            {updating && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+            Opt out
+          </button>
+        </div>
+      </Dialog>
+    </section>
   );
 }

@@ -3,13 +3,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import {
-  Clock,
+  History,
   Check,
   Loader2,
   AlertCircle,
-  Eye,
-  Edit3,
-  Columns,
   Heading1,
   Heading2,
   Heading3,
@@ -21,11 +18,15 @@ import {
   CheckSquare,
   Quote,
   Link as LinkIcon,
-  ShieldAlert,
+  SquareCode,
   ArrowLeft,
+  Lock,
+  type LucideIcon,
 } from 'lucide-react';
 import { SafeMarkdownView } from './SafeMarkdownView';
 import { DocHistoryDrawer } from './DocHistoryDrawer';
+import { Alert } from '@/components/ui/states';
+import { formatDateTime } from '@/lib/format';
 import type { DocDTO } from '@workspace/core';
 
 export type SaveStatus = 'saved' | 'saving' | 'unsaved' | 'error' | 'conflict';
@@ -37,6 +38,21 @@ interface DocEditorProps {
   backHref?: string;
   onDocUpdated?: (doc: DocDTO) => void;
 }
+
+const FORMAT_ACTIONS: { label: string; icon: LucideIcon; prefix: string; suffix?: string; groupEnd?: boolean }[] = [
+  { label: 'Heading 1', icon: Heading1, prefix: '# ' },
+  { label: 'Heading 2', icon: Heading2, prefix: '## ' },
+  { label: 'Heading 3', icon: Heading3, prefix: '### ', groupEnd: true },
+  { label: 'Bold', icon: Bold, prefix: '**', suffix: '**' },
+  { label: 'Italic', icon: Italic, prefix: '*', suffix: '*' },
+  { label: 'Inline code', icon: Code, prefix: '`', suffix: '`', groupEnd: true },
+  { label: 'Bulleted list', icon: List, prefix: '- ' },
+  { label: 'Numbered list', icon: ListOrdered, prefix: '1. ' },
+  { label: 'Checklist', icon: CheckSquare, prefix: '- [ ] ' },
+  { label: 'Quote', icon: Quote, prefix: '> ' },
+  { label: 'Link', icon: LinkIcon, prefix: '[', suffix: '](https://)' },
+  { label: 'Code block', icon: SquareCode, prefix: '```\n', suffix: '\n```' },
+];
 
 export function DocEditor({
   initialDoc,
@@ -50,10 +66,7 @@ export function DocEditor({
   const [title, setTitle] = useState(initialDoc.title);
   const [content, setContent] = useState(initialDoc.bodyMd);
 
-  // Editor layout mode
-  const [viewMode, setViewMode] = useState<'edit' | 'preview' | 'split'>('split');
-
-  // History Drawer state
+  const [viewMode, setViewMode] = useState<'edit' | 'preview' | 'split'>(isViewer ? 'preview' : 'split');
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   // Save coordinator state
@@ -75,11 +88,14 @@ export function DocEditor({
   const contentRef = useRef(content);
   contentRef.current = content;
 
-  // Textarea ref for inserting formatting
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Check if current text differs from last acknowledged document
   const isDirty = title !== doc.title || content !== doc.bodyMd;
+
+  useEffect(() => {
+    document.title = `${title || 'Untitled'} · Workspace`;
+  }, [title]);
 
   // -------------------------------------------------------------------------
   // 1-Second Autosave Execution
@@ -88,7 +104,6 @@ export function DocEditor({
     async (manual = false) => {
       if (isViewer) return;
 
-      // Check if dirty
       const currentTitle = titleRef.current.trim();
       const currentContent = contentRef.current;
       const currentCanonical = docRef.current;
@@ -123,18 +138,16 @@ export function DocEditor({
         });
 
         if (res.status === 412) {
-          // Precondition failed (Conflict)
           const errorData = await res.json().catch(() => ({}));
           const fresh = errorData.details?.currentEntity || null;
           setConflictEntity(fresh);
           setSaveStatus('conflict');
-          setErrorMessage('This document was updated by someone else. Please resolve the conflict below.');
           return;
         }
 
         if (!res.ok) {
           const errorData = await res.json().catch(() => ({}));
-          throw new Error(errorData.message || 'Failed to save changes');
+          throw new Error(errorData.message || "Your changes couldn't be saved.");
         }
 
         const updatedDoc: DocDTO = await res.json();
@@ -145,7 +158,6 @@ export function DocEditor({
         // Check if user continued typing while save was in flight
         if (draftGenRef.current > genToSubmit) {
           setSaveStatus('unsaved');
-          // Queue next autosave pass
           if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
           debounceTimerRef.current = setTimeout(() => {
             performSave();
@@ -153,9 +165,9 @@ export function DocEditor({
         } else {
           setSaveStatus('saved');
         }
-      } catch (err: any) {
+      } catch (err) {
         setSaveStatus('error');
-        setErrorMessage(err.message || 'Error communicating with server');
+        setErrorMessage((err as Error).message || "Couldn't reach the server.");
       } finally {
         inFlightRef.current = false;
       }
@@ -163,31 +175,25 @@ export function DocEditor({
     [isViewer, orgId, onDocUpdated]
   );
 
-  // -------------------------------------------------------------------------
-  // Handle Content Changes (Triggers 1s debounce)
-  // -------------------------------------------------------------------------
-  const handleContentChange = (newContent: string) => {
-    if (isViewer) return;
-    setContent(newContent);
+  const scheduleSave = () => {
     draftGenRef.current += 1;
     setSaveStatus('unsaved');
-
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     debounceTimerRef.current = setTimeout(() => {
       performSave();
     }, 1000);
   };
 
+  const handleContentChange = (newContent: string) => {
+    if (isViewer) return;
+    setContent(newContent);
+    scheduleSave();
+  };
+
   const handleTitleChange = (newTitle: string) => {
     if (isViewer) return;
     setTitle(newTitle);
-    draftGenRef.current += 1;
-    setSaveStatus('unsaved');
-
-    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-    debounceTimerRef.current = setTimeout(() => {
-      performSave();
-    }, 1000);
+    scheduleSave();
   };
 
   // -------------------------------------------------------------------------
@@ -208,9 +214,6 @@ export function DocEditor({
     };
   }, [isDirty, saveStatus]);
 
-  // -------------------------------------------------------------------------
-  // Formatting Toolbar Helper
-  // -------------------------------------------------------------------------
   const insertFormatting = (prefix: string, suffix = '') => {
     if (isViewer) return;
     const textarea = textareaRef.current;
@@ -237,7 +240,6 @@ export function DocEditor({
   // -------------------------------------------------------------------------
   const handleOverwriteConflict = async () => {
     if (!conflictEntity) return;
-    // Overwrite using fresh server entity's version
     setDoc(conflictEntity);
     docRef.current = conflictEntity;
     setConflictEntity(null);
@@ -256,355 +258,168 @@ export function DocEditor({
     setErrorMessage(null);
   };
 
-  return (
-    <div className="flex flex-col h-[calc(100vh-80px)] rounded-2xl bg-panel border border-border-subtle shadow-sm overflow-hidden animate-in fade-in duration-200">
-      {/* Top Navbar */}
-      <div className="p-3 lg:p-4 border-b border-border-subtle bg-panel-elevated/40 flex flex-wrap items-center justify-between gap-3 shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
-          {backHref ? (
-            <Link
-              href={backHref}
-              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-panel-inset transition-colors shrink-0"
-              title="Back to documents"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </Link>
-          ) : (
-            <Link
-              href={`/orgs/${orgId}/docs`}
-              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-panel-inset transition-colors shrink-0"
-              title="Back to documents"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </Link>
-          )}
+  const words = content.split(/\s+/).filter(Boolean).length;
 
-          <div className="flex items-center gap-2 min-w-0">
+  return (
+    <div className="space-y-4">
+      {/* Title row */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 flex-1 items-start gap-2">
+          <Link
+            href={backHref ?? `/orgs/${orgId}/docs`}
+            className="btn btn-ghost btn-icon btn-sm mt-0.5 shrink-0"
+            aria-label="Back to docs"
+            title="Back to docs"
+          >
+            <ArrowLeft aria-hidden="true" />
+          </Link>
+          <div className="min-w-0 flex-1">
             {isViewer ? (
-              <h1 className="text-sm lg:text-base font-bold text-foreground truncate">
-                {title}
-              </h1>
+              <h1 className="text-xl font-semibold tracking-tight text-fg">{title}</h1>
             ) : (
               <input
                 type="text"
                 value={title}
                 onChange={(e) => handleTitleChange(e.target.value)}
-                placeholder="Untitled Document"
-                className="text-sm lg:text-base font-bold text-foreground bg-transparent border-b border-transparent hover:border-border-subtle focus:border-accent focus:outline-none transition-colors px-1 py-0.5 truncate min-w-[200px] max-w-sm lg:max-w-md"
+                placeholder="Untitled"
+                aria-label="Title"
+                className="w-full rounded-md bg-transparent px-1 py-0.5 text-xl font-semibold tracking-tight text-fg placeholder:text-fg-subtle hover:bg-surface-2 focus-visible:bg-surface"
               />
             )}
-
-            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-accent/20 text-accent border border-accent/30 shrink-0">
-              v{doc.version}
-            </span>
-
-            {doc.node && (
-              <span className="hidden sm:inline-block text-[10px] font-medium px-2 py-0.5 rounded bg-panel-inset text-muted-foreground border border-border-subtle shrink-0">
-                {doc.node.name}
-              </span>
-            )}
+            <p className="px-1 text-xs text-fg-muted">
+              {doc.node?.name && <span>{doc.node.name} · </span>}
+              Edited {formatDateTime(doc.updatedAt)} by {doc.updater?.name || 'someone'} · {words.toLocaleString()} words
+            </p>
           </div>
         </div>
 
-        {/* Right Action & Status Controls */}
-        <div className="flex items-center gap-2.5">
-          {/* Autosave Status Indicator */}
+        <div className="flex flex-wrap items-center gap-2 pl-10 sm:pl-0">
           {!isViewer && (
-            <div className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg bg-panel-inset border border-border-subtle">
+            <span role="status" className="flex items-center gap-1.5 text-xs text-fg-muted">
               {saveStatus === 'saving' && (
                 <>
-                  <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" />
-                  <span className="text-muted-foreground text-[11px]">Saving...</span>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  Saving…
                 </>
               )}
               {saveStatus === 'saved' && (
                 <>
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="text-emerald-400 text-[11px]">Saved</span>
+                  <Check className="h-3.5 w-3.5 text-success" aria-hidden="true" />
+                  Saved
                 </>
               )}
-              {saveStatus === 'unsaved' && (
-                <>
-                  <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                  <span className="text-muted-foreground text-[11px]">Unsaved</span>
-                </>
-              )}
+              {saveStatus === 'unsaved' && 'Unsaved changes'}
               {saveStatus === 'error' && (
-                <>
-                  <AlertCircle className="w-3.5 h-3.5 text-destructive" />
-                  <span className="text-destructive text-[11px]">Save failed</span>
-                  <button
-                    onClick={() => performSave(true)}
-                    className="underline ml-1 text-accent text-[11px] font-bold"
-                  >
-                    Retry
-                  </button>
-                </>
+                <span className="flex items-center gap-1 text-danger">
+                  <AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                  Not saved
+                </span>
               )}
-              {saveStatus === 'conflict' && (
-                <>
-                  <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
-                  <span className="text-amber-400 text-[11px] font-bold">Conflict</span>
-                </>
-              )}
-            </div>
+              {saveStatus === 'conflict' && <span className="text-warning">Edit conflict</span>}
+            </span>
           )}
 
-          {/* View Mode Toggle */}
-          <div className="flex items-center p-0.5 rounded-lg bg-panel-inset border border-border-subtle">
-            <button
-              onClick={() => setViewMode('edit')}
-              className={`p-1.5 rounded-md text-xs transition-colors ${
-                viewMode === 'edit'
-                  ? 'bg-panel-elevated text-foreground font-bold shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-              title="Editor only"
-            >
-              <Edit3 className="w-3.5 h-3.5" />
+          <div className="segmented" role="group" aria-label="Layout">
+            {!isViewer && (
+              <button type="button" aria-pressed={viewMode === 'edit'} onClick={() => setViewMode('edit')}>
+                Write
+              </button>
+            )}
+            <button type="button" aria-pressed={viewMode === 'preview'} onClick={() => setViewMode('preview')}>
+              Preview
             </button>
-            <button
-              onClick={() => setViewMode('preview')}
-              className={`p-1.5 rounded-md text-xs transition-colors ${
-                viewMode === 'preview'
-                  ? 'bg-panel-elevated text-foreground font-bold shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-              title="Preview only"
-            >
-              <Eye className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => setViewMode('split')}
-              className={`p-1.5 rounded-md text-xs transition-colors hidden md:block ${
-                viewMode === 'split'
-                  ? 'bg-panel-elevated text-foreground font-bold shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-              title="Side-by-side view"
-            >
-              <Columns className="w-3.5 h-3.5" />
-            </button>
+            {!isViewer && (
+              <button type="button" aria-pressed={viewMode === 'split'} onClick={() => setViewMode('split')} className="!hidden md:!inline-flex">
+                Split
+              </button>
+            )}
           </div>
 
-          {/* Version History Button */}
-          <button
-            onClick={() => setIsHistoryOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-panel-inset hover:bg-panel-elevated border border-border-subtle text-xs text-foreground font-medium transition-colors"
-            title="View document revision history"
-          >
-            <Clock className="w-3.5 h-3.5 text-accent" />
-            <span>History</span>
+          <button type="button" onClick={() => setIsHistoryOpen(true)} className="btn btn-secondary btn-sm">
+            <History aria-hidden="true" />
+            History
           </button>
         </div>
       </div>
 
-      {/* Read-Only Viewer Banner */}
       {isViewer && (
-        <div className="px-4 py-2 bg-panel-inset border-b border-border-subtle flex items-center gap-2 text-xs text-muted-foreground">
-          <ShieldAlert className="w-4 h-4 text-accent" />
-          <span>You have read-only permissions for this document. Edits and version restores are disabled.</span>
-        </div>
+        <Alert tone="info">
+          <span className="flex items-center gap-1.5">
+            <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+            You can read this doc but not edit it.
+          </span>
+        </Alert>
       )}
 
-      {/* Conflict Resolution Banner (412) */}
       {saveStatus === 'conflict' && conflictEntity && (
-        <div className="p-4 bg-amber-500/10 border-b border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-          <div className="flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
-            <div>
-              <p className="font-bold text-foreground">
-                Concurrent Edit Conflict: Version {conflictEntity.version} is now available on server.
-              </p>
-              <p className="text-muted-foreground text-[11px]">
-                Your edits are safely retained in memory. Choose whether to overwrite with your text or discard and load the server version.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={handleDiscardConflict}
-              className="px-3 py-1.5 rounded-lg bg-panel-inset hover:bg-panel-elevated border border-border-subtle text-muted-foreground hover:text-foreground font-medium transition-colors"
-            >
-              Discard my edits & load server
+        <Alert tone="warning" title="Someone else saved this doc while you were typing">
+          <p>Your text is still here. Keep yours and replace theirs, or switch to their version.</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button type="button" onClick={handleOverwriteConflict} className="btn btn-secondary btn-sm">
+              Keep my text
             </button>
-            <button
-              onClick={handleOverwriteConflict}
-              className="px-3 py-1.5 rounded-lg bg-accent text-accent-foreground font-bold shadow-sm hover:opacity-90 transition-opacity"
-            >
-              Overwrite (keep my changes)
+            <button type="button" onClick={handleDiscardConflict} className="btn btn-ghost btn-sm">
+              Use their version
             </button>
           </div>
-        </div>
+        </Alert>
       )}
 
-      {/* Save Error Banner */}
       {saveStatus === 'error' && errorMessage && (
-        <div className="p-3 bg-destructive/10 border-b border-destructive/30 flex items-center justify-between gap-3 text-xs text-destructive">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{errorMessage}</span>
+        <Alert
+          action={
+            <button type="button" onClick={() => performSave(true)} className="link shrink-0">
+              Try again
+            </button>
+          }
+        >
+          {errorMessage}
+        </Alert>
+      )}
+
+      <div className="card overflow-hidden">
+        {!isViewer && viewMode !== 'preview' && (
+          <div role="toolbar" aria-label="Formatting" className="flex items-center gap-0.5 overflow-x-auto border-b border-border px-2 py-1.5">
+            {FORMAT_ACTIONS.map(({ label, icon: Icon, prefix, suffix, groupEnd }) => (
+              <React.Fragment key={label}>
+                <button
+                  type="button"
+                  onClick={() => insertFormatting(prefix, suffix)}
+                  aria-label={label}
+                  title={label}
+                  className="btn btn-ghost btn-icon btn-sm h-8 w-8 shrink-0"
+                >
+                  <Icon aria-hidden="true" />
+                </button>
+                {groupEnd && <span className="mx-1 h-4 w-px shrink-0 bg-border" aria-hidden="true" />}
+              </React.Fragment>
+            ))}
           </div>
-          <button
-            onClick={() => performSave(true)}
-            className="underline font-bold hover:opacity-80"
-          >
-            Retry Save
-          </button>
-        </div>
-      )}
+        )}
 
-      {/* Formatting Controls Toolbar */}
-      {!isViewer && viewMode !== 'preview' && (
-        <div className="px-3 py-1.5 border-b border-border-subtle bg-panel-inset flex items-center gap-1 overflow-x-auto text-xs shrink-0">
-          <button
-            type="button"
-            onClick={() => insertFormatting('# ')}
-            className="p-1.5 rounded hover:bg-panel-elevated text-muted-foreground hover:text-foreground"
-            title="Heading 1"
-          >
-            <Heading1 className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => insertFormatting('## ')}
-            className="p-1.5 rounded hover:bg-panel-elevated text-muted-foreground hover:text-foreground"
-            title="Heading 2"
-          >
-            <Heading2 className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => insertFormatting('### ')}
-            className="p-1.5 rounded hover:bg-panel-elevated text-muted-foreground hover:text-foreground"
-            title="Heading 3"
-          >
-            <Heading3 className="w-3.5 h-3.5" />
-          </button>
-          <span className="w-px h-3.5 bg-border-subtle mx-1" />
-          <button
-            type="button"
-            onClick={() => insertFormatting('**', '**')}
-            className="p-1.5 rounded hover:bg-panel-elevated text-muted-foreground hover:text-foreground"
-            title="Bold"
-          >
-            <Bold className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => insertFormatting('*', '*')}
-            className="p-1.5 rounded hover:bg-panel-elevated text-muted-foreground hover:text-foreground"
-            title="Italic"
-          >
-            <Italic className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => insertFormatting('`', '`')}
-            className="p-1.5 rounded hover:bg-panel-elevated text-muted-foreground hover:text-foreground"
-            title="Inline code"
-          >
-            <Code className="w-3.5 h-3.5" />
-          </button>
-          <span className="w-px h-3.5 bg-border-subtle mx-1" />
-          <button
-            type="button"
-            onClick={() => insertFormatting('- ')}
-            className="p-1.5 rounded hover:bg-panel-elevated text-muted-foreground hover:text-foreground"
-            title="Bullet List"
-          >
-            <List className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => insertFormatting('1. ')}
-            className="p-1.5 rounded hover:bg-panel-elevated text-muted-foreground hover:text-foreground"
-            title="Numbered List"
-          >
-            <ListOrdered className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => insertFormatting('- [ ] ')}
-            className="p-1.5 rounded hover:bg-panel-elevated text-muted-foreground hover:text-foreground"
-            title="Task Checklist"
-          >
-            <CheckSquare className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => insertFormatting('> ')}
-            className="p-1.5 rounded hover:bg-panel-elevated text-muted-foreground hover:text-foreground"
-            title="Quote"
-          >
-            <Quote className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => insertFormatting('[', '](https://)')}
-            className="p-1.5 rounded hover:bg-panel-elevated text-muted-foreground hover:text-foreground"
-            title="Insert Link"
-          >
-            <LinkIcon className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => insertFormatting('```\n', '\n```')}
-            className="p-1.5 rounded hover:bg-panel-elevated text-muted-foreground hover:text-foreground font-mono text-[10px]"
-            title="Code Block"
-          >
-            {'```'}
-          </button>
-        </div>
-      )}
-
-      {/* Editor & Preview Workspace */}
-      <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border-subtle">
-        {/* Left Pane: Markdown Textarea */}
-        {(viewMode === 'edit' || viewMode === 'split') && (
-          <div className={`h-full flex flex-col ${viewMode === 'edit' ? 'col-span-2' : ''}`}>
+        <div className={`grid min-h-[28rem] ${viewMode === 'split' ? 'md:grid-cols-2 md:divide-x md:divide-border' : ''}`}>
+          {(viewMode === 'edit' || viewMode === 'split') && (
             <textarea
               ref={textareaRef}
               value={content}
               onChange={(e) => handleContentChange(e.target.value)}
               disabled={isViewer}
-              placeholder="Type your document content in Markdown..."
-              className="flex-1 w-full p-4 lg:p-6 bg-transparent text-foreground placeholder:text-muted-foreground font-mono text-xs leading-relaxed resize-none focus:outline-none"
+              aria-label="Doc text (Markdown)"
+              placeholder="Write in Markdown. # for headings, - for lists, **bold**."
+              className="h-[calc(100dvh-20rem)] min-h-[28rem] w-full resize-none bg-transparent p-5 font-mono text-[13px] leading-relaxed text-fg placeholder:text-fg-subtle focus-visible:outline-none"
             />
-          </div>
-        )}
+          )}
 
-        {/* Right Pane: Live Safe Preview */}
-        {(viewMode === 'preview' || viewMode === 'split') && (
-          <div
-            className={`h-full overflow-y-auto p-4 lg:p-6 bg-panel-inset/30 ${
-              viewMode === 'preview' ? 'col-span-2' : ''
-            }`}
-          >
-            <div className="max-w-3xl mx-auto">
-              <SafeMarkdownView content={content} />
+          {(viewMode === 'preview' || viewMode === 'split') && (
+            <div className={`h-[calc(100dvh-20rem)] min-h-[28rem] overflow-y-auto p-5 ${viewMode === 'split' ? 'hidden md:block' : ''}`}>
+              <div className="mx-auto max-w-[68ch]">
+                <SafeMarkdownView content={content} />
+              </div>
             </div>
-          </div>
-        )}
-      </div>
-
-      {/* Bottom Status Footer */}
-      <div className="px-4 py-2 border-t border-border-subtle bg-panel-elevated/20 flex items-center justify-between text-[11px] text-muted-foreground shrink-0">
-        <div>
-          Last updated by{' '}
-          <span className="text-foreground font-medium">
-            {doc.updater?.name || 'Unknown'}
-          </span>{' '}
-          on {new Date(doc.updatedAt).toLocaleString()}
-        </div>
-        <div className="flex items-center gap-3">
-          <span>{content.length.toLocaleString()} characters</span>
-          <span>{content.split(/\s+/).filter(Boolean).length} words</span>
+          )}
         </div>
       </div>
 
-      {/* Version History Drawer */}
       <DocHistoryDrawer
         isOpen={isHistoryOpen}
         onClose={() => setIsHistoryOpen(false)}

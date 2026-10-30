@@ -157,7 +157,6 @@ export async function resolveMeetingSpeakers(
         promptId: 'resolve.speakers',
         promptVersion: '1.0',
         tier: 'fast',
-        temperature: 0,
         schema: SpeakerResolutionResultSchema,
         systemPrefix:
           'You are an identity disambiguation assistant in Workspace v1. Match transcript speaker labels to active organization user IDs. Only match if confident. If external guest or uncertain, set matchedUserId to null.',

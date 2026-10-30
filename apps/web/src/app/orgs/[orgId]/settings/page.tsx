@@ -1,378 +1,270 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'next/navigation';
-import {
-  Palette,
-  Settings as SettingsIcon,
-  ShieldCheck,
-  Cable,
-  RotateCcw,
-  Check,
-} from 'lucide-react';
-import { useTheme, DEFAULT_ACCENT, AccentPreset } from '@/components/theme-provider';
+import Link from 'next/link';
+import { useParams, useSearchParams } from 'next/navigation';
+import { Monitor, Moon, RotateCcw, Sun, Video, type LucideIcon } from 'lucide-react';
+import type { ZoomIntegrationDTO, ZoomHostConsentDTO, ZoomHostConsentStatus } from '@workspace/core';
+import { useTheme, DEFAULT_ACCENT, type ThemePreference } from '@/components/theme-provider';
+import { useShell } from '@/components/shell/shell-context';
+import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/ui/page-header';
+import { EmptyState, ErrorState } from '@/components/ui/states';
 import { ZoomIntegrationCard } from '@/components/integrations/zoom-card';
 import { ZoomHostDrawer } from '@/components/integrations/zoom-host-drawer';
 import { MyConsentCard } from '@/components/integrations/my-consent-card';
-import type {
-  ZoomIntegrationDTO,
-  ZoomHostConsentDTO,
-  ZoomHostConsentStatus,
-} from '@workspace/core';
 
-export default function SettingsPage() {
-  const params = useParams();
-  const orgId = (params?.orgId as string) || '';
+type Tab = 'appearance' | 'integrations';
 
-  const { accentColor, setAccentColor, resetAccentColor, presets } = useTheme();
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'appearance', label: 'Appearance' },
+  { id: 'integrations', label: 'Integrations' },
+];
 
-  const [activeTab, setActiveTab] = useState<'appearance' | 'general' | 'integrations' | 'security'>('appearance');
-  const [customHex, setCustomHex] = useState(accentColor);
-  const [retentionDays, setRetentionDays] = useState(180);
+const THEME_OPTIONS: { id: ThemePreference; label: string; icon: LucideIcon }[] = [
+  { id: 'light', label: 'Light', icon: Sun },
+  { id: 'dark', label: 'Dark', icon: Moon },
+  { id: 'system', label: 'System', icon: Monitor },
+];
 
-  // Zoom Integration State
+// Native radios inside styled labels: arrow keys, focus and form semantics come for free.
+const OPTION_CARD =
+  'flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-fg-muted transition-colors hover:bg-surface-2 has-[:checked]:border-accent has-[:checked]:bg-accent-subtle has-[:checked]:text-fg has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent-text';
+
+async function failure(res: Response, fallback: string): Promise<Error> {
+  const body = await res.json().catch(() => ({}));
+  return new Error(body.message || fallback);
+}
+
+function AppearanceSettings() {
+  const { theme, setTheme, accentColor, setAccentColor, resetAccentColor, presets } = useTheme();
+  const [hexDraft, setHexDraft] = useState(accentColor);
+  useEffect(() => setHexDraft(accentColor), [accentColor]);
+
+  const onHexChange = (value: string) => {
+    setHexDraft(value);
+    const hex = value.startsWith('#') ? value : `#${value}`;
+    if (/^#[0-9a-f]{6}$/i.test(hex)) setAccentColor(hex.toLowerCase());
+  };
+
+  return (
+    <div className="card divide-y divide-border">
+      <fieldset className="space-y-3 p-5">
+        <legend className="float-left mb-3 w-full">
+          <span className="block font-semibold text-fg">Theme</span>
+          <span className="block text-sm text-fg-muted">System follows your device&apos;s light or dark setting.</span>
+        </legend>
+        <div className="grid clear-both grid-cols-3 gap-2 sm:max-w-md">
+          {THEME_OPTIONS.map(({ id, label, icon: Icon }) => (
+            <label key={id} className={`${OPTION_CARD} justify-center`}>
+              <input type="radio" name="theme" value={id} checked={theme === id} onChange={() => setTheme(id)} className="sr-only" />
+              <Icon className="h-4 w-4" aria-hidden="true" />
+              {label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      <fieldset className="space-y-3 p-5">
+        <legend className="float-left mb-3 w-full">
+          <span className="block font-semibold text-fg">Accent colour</span>
+          <span className="block text-sm text-fg-muted">
+            Used for buttons, links and highlights. Text on it is adjusted to stay readable in both themes.
+          </span>
+        </legend>
+        <div className="grid clear-both grid-cols-2 gap-2 sm:grid-cols-3 lg:max-w-xl">
+          {presets.map((preset) => (
+            <label key={preset.hex} className={OPTION_CARD}>
+              <input
+                type="radio"
+                name="accent"
+                value={preset.hex}
+                checked={accentColor.toLowerCase() === preset.hex.toLowerCase()}
+                onChange={() => setAccentColor(preset.hex)}
+                className="sr-only"
+              />
+              <span className="h-4 w-4 shrink-0 rounded-full ring-1 ring-inset ring-fg/20" style={{ backgroundColor: preset.hex }} aria-hidden="true" />
+              {preset.name}
+            </label>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3 pt-2">
+          <div>
+            <label htmlFor="accent-hex" className="label">
+              Custom colour
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={accentColor}
+                onChange={(e) => setAccentColor(e.target.value)}
+                aria-label="Pick a custom accent colour"
+                className="h-9 w-10 cursor-pointer rounded-md border border-border bg-surface p-1"
+              />
+              <input
+                id="accent-hex"
+                type="text"
+                value={hexDraft}
+                onChange={(e) => onHexChange(e.target.value)}
+                placeholder={DEFAULT_ACCENT}
+                maxLength={7}
+                spellCheck={false}
+                className="field w-28 font-mono"
+              />
+            </div>
+          </div>
+          <button type="button" onClick={resetAccentColor} disabled={accentColor === DEFAULT_ACCENT} className="btn btn-ghost">
+            <RotateCcw className="h-4 w-4" aria-hidden="true" />
+            Reset
+          </button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 rounded-lg bg-surface-2 p-3 text-sm">
+          <span className="text-fg-muted">Preview</span>
+          <span className="btn btn-primary btn-sm pointer-events-none">Primary</span>
+          <span className="link">A link</span>
+          <Badge variant="accent">Badge</Badge>
+        </div>
+      </fieldset>
+
+      <p className="p-5 text-sm text-fg-muted">Theme and colour are saved in this browser only.</p>
+    </div>
+  );
+}
+
+function IntegrationSettings({ orgId, role }: { orgId: string; role: string }) {
   const [zoomIntegration, setZoomIntegration] = useState<ZoomIntegrationDTO | null>(null);
+  const [zoomAvailable, setZoomAvailable] = useState(true);
   const [zoomHosts, setZoomHosts] = useState<ZoomHostConsentDTO[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [hostsLoading, setHostsLoading] = useState(false);
   const [isHostDrawerOpen, setIsHostDrawerOpen] = useState(false);
-  const [isLoadingZoom, setIsLoadingZoom] = useState(false);
 
   const fetchZoomIntegration = useCallback(async () => {
-    if (!orgId) return;
-    setIsLoadingZoom(true);
+    setLoadError(null);
     try {
       const res = await fetch(`/api/orgs/${orgId}/integrations/zoom`);
-      if (res.ok) {
-        const data = await res.json();
-        setZoomIntegration(data.integration || null);
-      }
+      if (!res.ok) throw await failure(res, "Zoom settings couldn't be loaded.");
+      const data = await res.json();
+      setZoomIntegration(data.integration || null);
+      setZoomAvailable(data.available !== false);
     } catch (err) {
-      console.error('Failed to load Zoom integration:', err);
+      setLoadError(err instanceof Error ? err.message : String(err));
     } finally {
-      setIsLoadingZoom(false);
+      setLoaded(true);
     }
   }, [orgId]);
 
   const fetchZoomHosts = useCallback(async () => {
-    if (!orgId) return;
+    setHostsLoading(true);
     try {
       const res = await fetch(`/api/orgs/${orgId}/integrations/zoom/hosts`);
-      if (res.ok) {
-        const data = await res.json();
-        setZoomHosts(data.hosts || []);
-      }
-    } catch (err) {
-      console.error('Failed to load Zoom hosts:', err);
+      if (res.ok) setZoomHosts((await res.json()).hosts || []);
+    } finally {
+      setHostsLoading(false);
     }
   }, [orgId]);
 
   useEffect(() => {
-    if (activeTab === 'integrations') {
-      fetchZoomIntegration();
-      fetchZoomHosts();
-    }
-  }, [activeTab, fetchZoomIntegration, fetchZoomHosts]);
+    if (!orgId) return;
+    fetchZoomIntegration();
+    fetchZoomHosts();
+  }, [orgId, fetchZoomIntegration, fetchZoomHosts]);
 
+  // Card, drawer and consent card show these errors next to the control that failed.
   const handleConnectZoom = async () => {
-    try {
-      const res = await fetch(`/api/orgs/${orgId}/integrations/zoom`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Failed to initiate Zoom authorization');
-      }
-
-      const { authorizationUrl } = await res.json();
-      if (authorizationUrl) {
-        window.location.href = authorizationUrl;
-      }
-    } catch (err) {
-      console.error('Error initiating Zoom connection:', err);
-      alert(err instanceof Error ? err.message : 'Failed to connect Zoom');
-    }
+    const res = await fetch(`/api/orgs/${orgId}/integrations/zoom`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    if (!res.ok) throw await failure(res, "Couldn't start connecting Zoom.");
+    const { authorizationUrl } = await res.json();
+    if (authorizationUrl) window.location.href = authorizationUrl;
   };
 
   const handleDisconnectZoom = async () => {
-    try {
-      const res = await fetch(`/api/orgs/${orgId}/integrations/zoom`, {
-        method: 'DELETE',
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Failed to disconnect Zoom');
-      }
-
-      const data = await res.json();
-      setZoomIntegration(data.integration);
-      await fetchZoomHosts();
-    } catch (err) {
-      console.error('Error disconnecting Zoom:', err);
-      alert(err instanceof Error ? err.message : 'Failed to disconnect Zoom');
-    }
+    const res = await fetch(`/api/orgs/${orgId}/integrations/zoom`, { method: 'DELETE' });
+    if (!res.ok) throw await failure(res, "Couldn't disconnect Zoom.");
+    setZoomIntegration((await res.json()).integration);
+    await fetchZoomHosts();
   };
 
   const handleUpdateHostConsent = async (
     zoomUserId: string,
     update: { consentStatus?: ZoomHostConsentStatus; adminDisabled?: boolean }
   ) => {
-    try {
-      const res = await fetch(`/api/orgs/${orgId}/integrations/zoom/hosts/${zoomUserId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(update),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Failed to update host consent');
-      }
-
-      const data = await res.json();
-      setZoomHosts((prev) =>
-        prev.map((h) => (h.zoomUserId === zoomUserId ? data.host : h))
-      );
-    } catch (err) {
-      console.error('Error updating host consent:', err);
-      alert(err instanceof Error ? err.message : 'Failed to update host consent');
-    }
-  };
-
-  const handleHexChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setCustomHex(val);
-    if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
-      setAccentColor(val);
-    }
-  };
-
-  const handlePresetSelect = (hex: string) => {
-    setCustomHex(hex);
-    setAccentColor(hex);
+    const res = await fetch(`/api/orgs/${orgId}/integrations/zoom/hosts/${zoomUserId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(update),
+    });
+    if (!res.ok) throw await failure(res, "Couldn't update this host.");
+    const { host } = await res.json();
+    setZoomHosts((prev) => prev.map((h) => (h.zoomUserId === zoomUserId ? host : h)));
   };
 
   return (
-    <div className="space-y-6 max-w-4xl animate-in fade-in duration-200">
-      <div>
-        <h1 className="text-xl lg:text-2xl font-bold text-foreground tracking-tight">
-          Organization Settings
-        </h1>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Configure interface themes, external integrations, retention rules, and tenant preferences.
-        </p>
-      </div>
-
-      {/* Tabs Header Matching Screenshot 958 & Screenshot 944 */}
-      <div className="flex border-b border-border-subtle gap-2">
-        <button
-          onClick={() => setActiveTab('appearance')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-all ${
-            activeTab === 'appearance'
-              ? 'border-accent text-accent'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <Palette className="w-4 h-4" />
-          <span>Appearance</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('integrations')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-all ${
-            activeTab === 'integrations'
-              ? 'border-accent text-accent'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <Cable className="w-4 h-4" />
-          <span>Integrations</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('general')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-all ${
-            activeTab === 'general'
-              ? 'border-accent text-accent'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <SettingsIcon className="w-4 h-4" />
-          <span>General</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('security')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-all ${
-            activeTab === 'security'
-              ? 'border-accent text-accent'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <ShieldCheck className="w-4 h-4" />
-          <span>Security & RLS</span>
-        </button>
-      </div>
-
-      {/* Tab: Appearance Matching Screenshot 958 */}
-      {activeTab === 'appearance' && (
-        <div className="space-y-6">
-          <div className="p-6 rounded-2xl bg-panel border border-border-subtle space-y-5">
-            <div>
-              <h2 className="text-sm font-bold text-foreground uppercase tracking-wider mb-1">
-                Primary Brand & Accent Color
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                Customize the interface accent color. Workspace v1 dynamically calculates
-                foreground luminance to preserve WCAG 2.1 AA readability.
-              </p>
-            </div>
-
-            {/* Presets Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {presets.map((preset: AccentPreset) => {
-                const isSelected = accentColor.toLowerCase() === preset.hex.toLowerCase();
-                return (
-                  <button
-                    key={preset.hex}
-                    onClick={() => handlePresetSelect(preset.hex)}
-                    className={`flex items-center gap-2.5 p-3 rounded-xl border text-xs font-semibold transition-all ${
-                      isSelected
-                        ? 'border-accent bg-panel-elevated shadow-sm'
-                        : 'border-border-subtle bg-panel hover:bg-panel-elevated'
-                    }`}
-                  >
-                    <span
-                      className="w-4 h-4 rounded-full border border-black/20 shrink-0"
-                      style={{ backgroundColor: preset.hex }}
-                    />
-                    <span className="text-foreground">{preset.name}</span>
-                    {isSelected && <Check className="w-3.5 h-3.5 text-accent ml-auto" />}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Custom Hex Row */}
-            <div className="pt-2 border-t border-border-subtle flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-              <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl bg-panel-inset border border-border-subtle">
-                <span className="text-xs text-muted-foreground font-mono">Hex:</span>
-                <input
-                  type="text"
-                  value={customHex}
-                  onChange={handleHexChange}
-                  placeholder="#d86dfc"
-                  maxLength={7}
-                  className="w-full bg-transparent text-xs font-mono font-bold text-foreground focus:outline-none"
-                />
-              </div>
-
-              <button
-                onClick={() => {
-                  setCustomHex(DEFAULT_ACCENT);
-                  resetAccentColor();
-                }}
-                className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl border border-border-subtle bg-panel hover:bg-panel-elevated text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Reset Default</span>
-              </button>
-            </div>
-          </div>
+    <div className="space-y-4">
+      {!loaded ? (
+        <div className="card space-y-3 p-5" role="status" aria-busy="true">
+          <span className="sr-only">Loading Zoom settings…</span>
+          <div className="skeleton h-5 w-32" />
+          <div className="skeleton h-4 w-3/4" />
         </div>
+      ) : loadError ? (
+        <ErrorState title="Couldn't load Zoom settings" message={loadError} onRetry={fetchZoomIntegration} />
+      ) : !zoomAvailable ? (
+        <EmptyState
+          icon={Video}
+          title="Zoom import isn't available here yet"
+          description="Bringing in Zoom meetings needs services this deployment doesn't run yet. Projects, tasks, docs and teams work as usual."
+        />
+      ) : (
+        <ZoomIntegrationCard
+          integration={zoomIntegration}
+          userRole={role}
+          onConnect={handleConnectZoom}
+          onDisconnect={handleDisconnectZoom}
+          onOpenHostDrawer={() => setIsHostDrawerOpen(true)}
+        />
       )}
 
-      {/* Tab: Integrations Matching Screenshot 944 */}
-      {activeTab === 'integrations' && (
-        <div className="space-y-6">
-          <div>
-            <h2 className="text-sm font-bold text-foreground uppercase tracking-wider mb-1">
-              Connected Services & Meeting Integrations
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              Administer cloud meeting intake, OAuth authorization, verified host opt-in, and transcript streaming.
-            </p>
-          </div>
+      {zoomAvailable && <MyConsentCard orgId={orgId} />}
 
-          <ZoomIntegrationCard
-            integration={zoomIntegration}
-            orgId={orgId}
-            userRole="owner"
-            onConnect={handleConnectZoom}
-            onDisconnect={handleDisconnectZoom}
-            onOpenHostDrawer={() => setIsHostDrawerOpen(true)}
-            isLoading={isLoadingZoom}
-          />
+      <ZoomHostDrawer
+        isOpen={isHostDrawerOpen}
+        onClose={() => setIsHostDrawerOpen(false)}
+        hosts={zoomHosts}
+        userRole={role}
+        onUpdateConsent={handleUpdateHostConsent}
+        isLoading={hostsLoading && zoomHosts.length === 0}
+      />
+    </div>
+  );
+}
 
-          <MyConsentCard orgId={orgId} />
+export default function SettingsPage() {
+  const params = useParams();
+  const orgId = (params?.orgId as string) || '';
+  const tab: Tab = useSearchParams().get('tab') === 'integrations' ? 'integrations' : 'appearance';
+  const { user } = useShell();
 
-          <ZoomHostDrawer
-            isOpen={isHostDrawerOpen}
-            onClose={() => setIsHostDrawerOpen(false)}
-            hosts={zoomHosts}
-            userRole="owner"
-            onUpdateConsent={handleUpdateHostConsent}
-            isLoading={isLoadingZoom}
-          />
-        </div>
-      )}
+  return (
+    <div className="max-w-4xl space-y-6">
+      <PageHeader title="Settings" description="Your appearance preferences and this organization's connected services." />
 
-      {/* Tab: General */}
-      {activeTab === 'general' && (
-        <div className="p-6 rounded-2xl bg-panel border border-border-subtle space-y-4">
-          <h2 className="text-sm font-bold text-foreground uppercase tracking-wider mb-2">
-            Data Retention & Lifecycle
-          </h2>
+      <nav className="tabs" aria-label="Settings sections">
+        {TABS.map((t) => (
+          <Link key={t.id} href={`?tab=${t.id}`} replace scroll={false} className="tab" aria-current={tab === t.id ? 'page' : undefined}>
+            {t.label}
+          </Link>
+        ))}
+      </nav>
 
-          <div className="space-y-3 max-w-md">
-            <div>
-              <label className="block text-xs font-semibold text-foreground mb-1">
-                Transcript & Notes Retention (Days)
-              </label>
-              <input
-                type="number"
-                min={30}
-                max={365}
-                value={retentionDays}
-                onChange={(e) => setRetentionDays(Number(e.target.value))}
-                className="w-full px-3 py-2 rounded-xl bg-panel-inset border border-border-subtle text-xs text-foreground focus:outline-none"
-              />
-              <p className="text-[11px] text-muted-foreground mt-1">
-                Permitted range: 30 to 365 days. Default: 180 days.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Tab: Security */}
-      {activeTab === 'security' && (
-        <div className="p-6 rounded-2xl bg-panel border border-border-subtle space-y-4">
-          <h2 className="text-sm font-bold text-foreground uppercase tracking-wider mb-2">
-            Security Invariants
-          </h2>
-          <div className="space-y-2 text-xs text-muted-foreground leading-relaxed">
-            <div className="p-3 rounded-xl bg-panel-inset border border-border-subtle flex items-center justify-between">
-              <span>PostgreSQL Row-Level Security</span>
-              <span className="text-emerald-400 font-mono font-bold">ENFORCED</span>
-            </div>
-            <div className="p-3 rounded-xl bg-panel-inset border border-border-subtle flex items-center justify-between">
-              <span>Managed Secret Store (Zero Plaintext Token DB)</span>
-              <span className="text-emerald-400 font-mono font-bold">ACTIVE</span>
-            </div>
-            <div className="p-3 rounded-xl bg-panel-inset border border-border-subtle flex items-center justify-between">
-              <span>BFF 30-Day Rolling Sessions</span>
-              <span className="text-emerald-400 font-mono font-bold">ACTIVE</span>
-            </div>
-            <div className="p-3 rounded-xl bg-panel-inset border border-border-subtle flex items-center justify-between">
-              <span>Tenant Compound Foreign Keys</span>
-              <span className="text-emerald-400 font-mono font-bold">RESTRICTIVE</span>
-            </div>
-          </div>
-        </div>
-      )}
+      {tab === 'appearance' ? <AppearanceSettings /> : <IntegrationSettings orgId={orgId} role={user?.role ?? 'member'} />}
     </div>
   );
 }

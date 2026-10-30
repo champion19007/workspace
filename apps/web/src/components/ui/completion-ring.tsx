@@ -14,7 +14,7 @@ export function CompletionRing({
   percentage,
   size = 140,
   strokeWidth = 10,
-  label = 'COMPLETE',
+  label = 'complete',
   className = '',
 }: CompletionRingProps) {
   const clamped = Math.min(100, Math.max(0, percentage));
@@ -28,12 +28,11 @@ export function CompletionRing({
       aria-valuenow={clamped}
       aria-valuemin={0}
       aria-valuemax={100}
-      aria-label={`Project completion: ${clamped}%`}
+      aria-label={`${clamped}% ${label}`}
       className={`relative inline-flex items-center justify-center ${className}`}
       style={{ width: size, height: size }}
     >
-      <svg width={size} height={size} className="transform -rotate-90">
-        {/* Background track */}
+      <svg width={size} height={size} className="-rotate-90" aria-hidden="true">
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -41,31 +40,25 @@ export function CompletionRing({
           stroke="currentColor"
           strokeWidth={strokeWidth}
           fill="none"
-          className="text-border-subtle"
+          className="text-surface-3"
         />
-        {/* Accent progress stroke */}
         <circle
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke="var(--accent, #d86dfc)"
+          stroke="currentColor"
           strokeWidth={strokeWidth}
           strokeDasharray={circumference}
           strokeDashoffset={strokeDashoffset}
           strokeLinecap="round"
           fill="none"
-          className="transition-all duration-500 ease-out"
+          className="text-accent transition-[stroke-dashoffset] duration-500 ease-out"
         />
       </svg>
 
-      {/* Center percentage readout */}
-      <div className="absolute inset-0 flex flex-col items-center justify-center text-center select-none">
-        <span className="text-2xl font-bold tracking-tight text-foreground font-mono">
-          {clamped}%
-        </span>
-        <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase mt-0.5">
-          {label}
-        </span>
+      <div className="absolute inset-0 flex select-none flex-col items-center justify-center text-center">
+        <span className="text-2xl font-semibold tabular-nums tracking-tight text-fg">{clamped}%</span>
+        <span className="text-xs text-fg-muted">{label}</span>
       </div>
     </div>
   );

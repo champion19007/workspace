@@ -333,9 +333,11 @@ describe('Web BFF & UI Journey: Zoom Account Connection & Host Opt-In (Requireme
   });
   afterEach(async () => {
     const { sql } = getServerContext();
-    await sql`DELETE FROM zoom_oauth_states`;
-    await sql`DELETE FROM zoom_host_consents`;
-    await sql`DELETE FROM integrations WHERE provider = 'zoom'`;
+    // Only this suite's organizations: the database is shared with local demo data and other suites.
+    const orgIds = [testOrg?.id, otherOrg?.id].filter((id): id is string => Boolean(id));
+    await sql`DELETE FROM zoom_oauth_states WHERE org_id = ANY(${orgIds}::uuid[])`;
+    await sql`DELETE FROM zoom_host_consents WHERE org_id = ANY(${orgIds}::uuid[])`;
+    await sql`DELETE FROM integrations WHERE provider = 'zoom' AND org_id = ANY(${orgIds}::uuid[])`;
     if (testOrg) await sql`DELETE FROM orgs WHERE id = ${testOrg.id}`;
     if (otherOrg) await sql`DELETE FROM orgs WHERE id = ${otherOrg.id}`;
   });

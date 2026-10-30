@@ -2,17 +2,40 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { Bell, Inbox, RotateCw } from 'lucide-react';
+import { Inbox } from 'lucide-react';
 import type { ActionItemDTO } from '@workspace/core';
-import { EmptyState } from '@/components/ui/table-shell';
+import { PageHeader } from '@/components/ui/page-header';
+import { EmptyState, ErrorState } from '@/components/ui/states';
 import { ActionItemCard } from '@/components/approvals/ActionItemCard';
+import { RequestsInbox } from '@/components/requests/RequestsInbox';
 
 type Scope = 'mine' | 'all';
+type Tab = 'requests' | 'meetings';
+
+function CardsSkeleton() {
+  return (
+    <div role="status" aria-busy="true" className="space-y-3">
+      <span className="sr-only">Loading suggestions…</span>
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="card space-y-3 p-4">
+          <div className="skeleton h-3 w-48" />
+          <div className="skeleton h-4 w-3/4" />
+          <div className="skeleton h-3 w-1/2" />
+          <div className="flex gap-2 pt-1">
+            <div className="skeleton h-8 w-24" />
+            <div className="skeleton h-8 w-20" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function InboxPage() {
   const params = useParams();
   const orgId = params.orgId as string;
 
+  const [tab, setTab] = useState<Tab>('meetings');
   const [scope, setScope] = useState<Scope>('mine');
   const [items, setItems] = useState<ActionItemDTO[]>([]);
   const [endCursor, setEndCursor] = useState<string | null>(null);
@@ -29,7 +52,7 @@ export default function InboxPage() {
         if (cursor) qs.set('cursor', cursor);
         const res = await fetch(`/api/orgs/${orgId}/action-items?${qs}`);
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Failed to load suggestions');
+        if (!res.ok) throw new Error(data.detail || "Suggestions couldn't be loaded.");
         setItems((prev) => (cursor ? [...prev, ...data.items] : data.items));
         setEndCursor(data.pageInfo?.hasNextPage ? data.pageInfo.endCursor : null);
       } catch (err) {
@@ -45,97 +68,91 @@ export default function InboxPage() {
     void load(null);
   }, [load]);
 
+  // Notifications about new requests link to ?tab=requests.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('tab') === 'requests') setTab('requests');
+  }, []);
+  const showTab = (next: Tab) => {
+    setTab(next);
+    window.history.replaceState(null, '', next === 'requests' ? '?tab=requests' : window.location.pathname);
+  };
+
   const pending = items.filter((i) => i.state === 'suggested').length;
-  const scopeButton = (value: Scope, label: string) => (
-    <button
-      type="button"
-      aria-pressed={scope === value}
-      onClick={() => setScope(value)}
-      className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
-        scope === value ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'
-      }`}
-    >
-      {label}
-    </button>
-  );
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-200">
-      <div>
-        <h1 className="text-xl lg:text-2xl font-bold text-foreground tracking-tight">Inbox</h1>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          AI suggestions from meetings become or change tasks only after a person approves them.
-        </p>
+    <div className="space-y-6">
+      <PageHeader
+        title="Inbox"
+        description="What's waiting for a decision: requests sent through request forms, and action items suggested from your meetings. Nothing becomes a task until someone accepts it."
+      />
+
+      <div role="tablist" aria-label="Inbox" className="tabs">
+        <button type="button" role="tab" aria-selected={tab === 'requests'} onClick={() => showTab('requests')} className="tab">
+          Requests
+        </button>
+        <button type="button" role="tab" aria-selected={tab === 'meetings'} onClick={() => showTab('meetings')} className="tab">
+          From meetings
+        </button>
       </div>
 
-      <section aria-labelledby="approvals-heading" className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <h2 id="approvals-heading" className="text-sm font-bold text-foreground">
-            Approvals{' '}
-            {/* The list API returns no total: while more pages exist the loaded count is only a lower bound. */}
-            {!loading && !error && (
-              <span className="text-muted-foreground font-medium">({`${pending}${endCursor ? '+' : ''}`} awaiting decision)</span>
-            )}
-          </h2>
-          <div role="group" aria-label="Which suggestions to show" className="inline-flex p-0.5 rounded-lg bg-panel border border-border-subtle self-start">
-            {scopeButton('mine', 'Suggested for me')}
-            {scopeButton('all', 'All I can review')}
-          </div>
-        </div>
-
-        {error ? (
-          <div role="alert" className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-xs text-rose-200">
-            {error}
-          </div>
-        ) : loading && items.length === 0 ? (
-          <p role="status" className="p-6 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
-            <RotateCw className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> Loading suggestions…
-          </p>
-        ) : items.length === 0 ? (
-          <EmptyState
-            icon={Inbox}
-            title="Nothing to review"
-            description={
-              scope === 'mine'
-                ? 'No open meeting suggestions name you as the owner. Switch to "All I can review" to see the rest.'
-                : 'There are no open meeting suggestions in projects you can access.'
-            }
-          />
-        ) : (
-          <div className="space-y-3">
-            {items.map((item) => (
-              <ActionItemCard
-                key={item.id}
-                item={item}
-                orgId={orgId}
-                showMeeting
-                onItemChange={(updated) => setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)))}
-              />
-            ))}
-            {endCursor && (
-              <button
-                type="button"
-                onClick={() => void load(endCursor)}
-                disabled={loading}
-                className="w-full px-4 py-2 rounded-lg border border-border-subtle text-xs text-foreground hover:bg-panel-elevated disabled:opacity-50"
-              >
-                {loading ? 'Loading…' : 'Load more suggestions'}
+      {tab === 'requests' ? (
+        <RequestsInbox orgId={orgId} />
+      ) : (
+        <section aria-labelledby="approvals-heading" className="space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 id="approvals-heading" className="text-sm font-semibold text-fg">
+              To review{' '}
+              {/* The list API returns no total: while more pages exist the loaded count is only a lower bound. */}
+              {!loading && !error && <span className="font-normal text-fg-muted">{`${pending}${endCursor ? '+' : ''}`}</span>}
+            </h2>
+            <div role="group" aria-label="Which suggestions to show" className="segmented self-start">
+              <button type="button" aria-pressed={scope === 'mine'} onClick={() => setScope('mine')}>
+                Suggested for me
               </button>
-            )}
+              <button type="button" aria-pressed={scope === 'all'} onClick={() => setScope('all')}>
+                All I can review
+              </button>
+            </div>
           </div>
-        )}
-      </section>
 
-      <section aria-labelledby="notifications-heading" className="space-y-3">
-        <h2 id="notifications-heading" className="text-sm font-bold text-foreground">
-          Notifications
-        </h2>
-        <EmptyState
-          icon={Bell}
-          title="Notifications are not available yet"
-          description="Mentions, assignments and due-date reminders will appear here once notifications are built (roadmap Stage 19)."
-        />
-      </section>
+          {error && items.length === 0 ? (
+            <ErrorState title="Couldn't load suggestions" message={error} onRetry={() => void load(null)} />
+          ) : loading && items.length === 0 ? (
+            <CardsSkeleton />
+          ) : items.length === 0 ? (
+            <EmptyState
+              icon={Inbox}
+              title={scope === 'mine' ? "You're all caught up" : 'Nothing to review'}
+              description={
+                scope === 'mine'
+                  ? 'No open suggestions name you as the owner. Others may still need a reviewer.'
+                  : 'There are no open meeting suggestions in projects you can access.'
+              }
+              action={scope === 'mine' ? { label: 'Show all I can review', onClick: () => setScope('all') } : undefined}
+            />
+          ) : (
+            <div className="space-y-3">
+              {items.map((item) => (
+                <ActionItemCard
+                  key={item.id}
+                  item={item}
+                  orgId={orgId}
+                  showMeeting
+                  onItemChange={(updated) => setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)))}
+                />
+              ))}
+              {endCursor && (
+                <button type="button" onClick={() => void load(endCursor)} disabled={loading} className="btn btn-secondary w-full">
+                  {loading ? 'Loading…' : 'Load more suggestions'}
+                </button>
+              )}
+              {error && <p className="text-sm text-danger">{error}</p>}
+            </div>
+          )}
+        </section>
+      )}
+
+      <p className="text-xs text-fg-muted">Mentions and comments on your work arrive under the bell at the top of the page.</p>
     </div>
   );
 }

@@ -1,10 +1,18 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { ThemeProvider } from '../components/theme-provider';
+import { THEME_INIT_SCRIPT } from '../lib/theme';
 
 export const metadata: Metadata = {
-  title: 'Workspace v1 — Platform Foundation',
-  description: 'Meeting notes, evidence-grounded action items, and project task management.',
+  title: 'Workspace',
+  description: 'Projects, tasks, docs and meeting notes, with action items you approve.',
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#f7f8fa' },
+    { media: '(prefers-color-scheme: dark)', color: '#0f1115' },
+  ],
 };
 
 export default function RootLayout({
@@ -13,8 +21,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
-      <body className="min-h-screen bg-canvas text-foreground antialiased selection:bg-accent selection:text-accent-foreground">
+    // The init script sets class="dark" before hydration, so the server and client class lists may differ.
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
+      <body className="min-h-screen bg-canvas text-fg antialiased">
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>

@@ -12,13 +12,48 @@ import {
 
 export { SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS };
 export const OAUTH_STATE_COOKIE_NAME = 'workspace_oauth_state';
+/** PKCE state from the sign-in start (Google or email link), needed by /api/auth/callback to finish. */
+export const PKCE_COOKIE_NAME = 'workspace_pkce';
 
 export function getSessionSecret(): string {
+  if (process.env.NODE_ENV === 'production') {
+    // The development fallback below is public (it's in the repository): anyone could forge sessions with it.
+    const secret = process.env.SESSION_SECRET;
+    if (!secret || secret.length < 32) {
+      throw new Error('SESSION_SECRET must be set to a random value of at least 32 characters (see docs/deploy-vercel.md)');
+    }
+    return secret;
+  }
   return (
     process.env.SESSION_SECRET ||
     process.env.ORIGIN_VERIFY_SECRET ||
     'workspace-dev-default-secret-key-32chars'
   );
+}
+
+/** Open-redirect protection: only same-site relative paths survive as a post-sign-in destination. */
+export function safeReturnTo(value: string | null | undefined): string | null {
+  return value && value.startsWith('/') && !value.startsWith('//') && !value.includes('\\') ? value : null;
+}
+
+/** Where the auth provider sends people back to, on the host that served this request. */
+export function authCallbackUrl(request: Request, returnTo?: string | null): string {
+  const host = request.headers.get('host') || 'localhost:3000';
+  const protocol = request.headers.get('x-forwarded-proto') || 'http';
+  const url = new URL(`${protocol}://${host}/api/auth/callback`);
+  const safe = safeReturnTo(returnTo);
+  if (safe) url.searchParams.set('returnTo', safe);
+  return url.toString();
+}
+
+export function getPkceCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+    path: '/api/auth',
+    maxAge: 60 * 60, // as long as an email sign-in link stays valid
+  };
 }
 
 export function getCookieOptions() {

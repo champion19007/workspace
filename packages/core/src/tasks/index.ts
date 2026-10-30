@@ -47,11 +47,27 @@ export function parseCalendarDate(dateStr?: string | null): { year: number; mont
 }
 
 /**
- * Returns today's date formatted as YYYY-MM-DD in the Asia/Kolkata timezone.
+ * The time zone that decides what "today" means for due dates and overdue work, the same for everyone on a
+ * deployment. Set NEXT_PUBLIC_APP_TIME_ZONE to an IANA name (e.g. America/New_York); the NEXT_PUBLIC_ prefix lets
+ * the browser use the same zone as the server. Defaults to Asia/Kolkata, which an unknown name also falls back to.
+ */
+export const APP_TIME_ZONE: string = (() => {
+  const zone = process.env.NEXT_PUBLIC_APP_TIME_ZONE;
+  if (!zone) return 'Asia/Kolkata';
+  try {
+    new Intl.DateTimeFormat('en-CA', { timeZone: zone });
+    return zone;
+  } catch {
+    return 'Asia/Kolkata';
+  }
+})();
+
+/**
+ * Returns today's date formatted as YYYY-MM-DD in the deployment's time zone (APP_TIME_ZONE; Asia/Kolkata by default).
  */
 export function getKolkataTodayDateString(): string {
   const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Kolkata',
+    timeZone: APP_TIME_ZONE,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -166,12 +182,16 @@ export const CreateTaskSchema = z.object({
   status: TaskStatusEnum.default('todo'),
   priority: TaskPriorityEnum.default('medium'),
   assigneeId: z.string().uuid('Assignee ID must be a valid UUID').nullable().optional(),
+  startDate: CalendarDateSchema.optional(),
   dueDate: CalendarDateSchema.optional(),
   parentTaskId: z.string().uuid('Parent task ID must be a valid UUID').nullable().optional(),
   labelIds: z.array(z.string().uuid()).max(20, 'Maximum 20 labels per task').optional(),
   source: z.literal('manual').optional(),
   sourceRef: z.string().max(128).optional(),
 }).superRefine((data, ctx) => {
+  if (data.startDate && data.dueDate && data.startDate > data.dueDate) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'The start date must be on or before the due date', path: ['startDate'] });
+  }
   if ((data as any).source && (data as any).source !== 'manual') {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -194,6 +214,7 @@ export const UpdateTaskSchema = z.object({
   status: TaskStatusEnum.optional(),
   priority: TaskPriorityEnum.optional(),
   assigneeId: z.string().uuid('Assignee ID must be a valid UUID').nullable().optional(),
+  startDate: CalendarDateSchema.optional(),
   dueDate: CalendarDateSchema.optional(),
   parentTaskId: z.string().uuid('Parent task ID must be a valid UUID').nullable().optional(),
   labelIds: z.array(z.string().uuid()).max(20).optional(),
@@ -292,6 +313,8 @@ export interface TaskDTO {
   priority: TaskPriority;
   assigneeId: string | null;
   assignee?: TaskAssigneeDTO | null;
+  /** When work is planned to start (YYYY-MM-DD), for the Timeline. */
+  startDate: string | null;
   dueDate: string | null;
   rank: string;
   version: number;

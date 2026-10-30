@@ -1,175 +1,161 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { User, Mail, Globe, Bell, Check, Save } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { ChevronRight, Palette, Video } from 'lucide-react';
+import { isReadOnlyRole } from '@workspace/core';
+import { useShell } from '@/components/shell/shell-context';
+import { displayNameFromEmail } from '@/components/shell/account-menu';
+import { Avatar } from '@/components/ui/avatar';
+import { RoleBadge } from '@/components/ui/badge';
+import { ROLE_CHOICES } from '@/components/ui/member-card';
+import { PageHeader } from '@/components/ui/page-header';
+import { Alert } from '@/components/ui/states';
 
-export default function ProfilePage() {
-  const [name, setName] = useState('Alex Mercer');
-  const [email, setEmail] = useState('alex@company.com');
-  const [timezone, setTimezone] = useState('Asia/Kolkata');
-  const [emailDigest, setEmailDigest] = useState(true);
-  const [mentionAlerts, setMentionAlerts] = useState(true);
-  const [saved, setSaved] = useState(false);
+const EMAIL_CHOICES = [
+  { kind: 'mentions', title: 'When someone mentions me', text: 'Sent right away.', team: false },
+  { kind: 'requests', title: 'New requests from forms', text: 'Sent right away, to the people who look after them.', team: true },
+  { kind: 'digest', title: 'Daily summary', text: "Once a day, anything you haven't seen yet.", team: false },
+] as const;
+
+type EmailKind = (typeof EMAIL_CHOICES)[number]['kind'];
+
+function EmailSettings({ orgId, readOnly }: { orgId: string; readOnly: boolean }) {
+  const url = `/api/orgs/${orgId}/me/notification-settings`;
+  const [prefs, setPrefs] = useState<Record<EmailKind, boolean> | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    async function loadUser() {
-      try {
-        const res = await fetch('/api/auth/session');
-        if (res.ok) {
-          const data = await res.json();
-          if (data.session) {
-            setEmail(data.session.email);
-            setName(data.session.email.split('@')[0]);
-          }
-        }
-      } catch {
-        // default
-      }
-    }
-    loadUser();
-  }, []);
+    let cancelled = false;
+    fetch(url)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error())))
+      .then((data) => !cancelled && setPrefs(data))
+      .catch(() => !cancelled && setError("Your email settings couldn't be loaded. Refresh to try again."));
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
 
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+  const change = async (kind: EmailKind, enabled: boolean) => {
+    setError(null);
+    setPrefs((p) => p && { ...p, [kind]: enabled });
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind, enabled }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      setPrefs((p) => p && { ...p, [kind]: !enabled });
+      setError("That change wasn't saved. Try again.");
+    }
   };
 
-  const initial = name ? name.charAt(0).toUpperCase() : 'U';
+  return (
+    <section aria-labelledby="email-heading" className="space-y-3">
+      <h2 id="email-heading" className="text-sm font-semibold text-fg">
+        Email notifications
+      </h2>
+      {error && <Alert>{error}</Alert>}
+      <ul className="card divide-y divide-border overflow-hidden">
+        {/* Requests only ever go to the team, so Executives and Clients aren't offered them. */}
+        {EMAIL_CHOICES.filter((c) => !(c.team && readOnly)).map(({ kind, title, text }) => (
+          <li key={kind}>
+            <label className="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2">
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium text-fg">{title}</span>
+                <span className="block text-sm text-fg-muted">{text}</span>
+              </span>
+              <input
+                type="checkbox"
+                className="h-4 w-4 shrink-0"
+                checked={prefs?.[kind] ?? true}
+                disabled={!prefs}
+                onChange={(e) => change(kind, e.target.checked)}
+              />
+            </label>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+export default function ProfilePage() {
+  const { orgId, user } = useShell();
+
+  const links = [
+    { href: `/orgs/${orgId}/settings?tab=appearance`, icon: Palette, title: 'Appearance', text: 'Light or dark theme and accent colour' },
+    { href: `/orgs/${orgId}/settings?tab=integrations`, icon: Video, title: 'Zoom meetings you host', text: 'Choose whether they are imported' },
+  ];
 
   return (
-    <div className="space-y-6 max-w-2xl animate-in fade-in duration-200">
-      <div>
-        <h1 className="text-xl lg:text-2xl font-bold text-foreground tracking-tight">
-          Profile Settings
-        </h1>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Manage your personal account details, timezone preferences, and notification channels.
-        </p>
-      </div>
+    <div className="max-w-2xl space-y-6">
+      <PageHeader title="Profile" description="Your account in this organization." />
 
-      <form onSubmit={handleSave} className="p-6 rounded-2xl bg-panel border border-border-subtle space-y-6">
-        {/* Avatar Header Matching Screenshot 956 */}
-        <div className="flex items-center gap-4 pb-6 border-b border-border-subtle">
-          <div className="w-16 h-16 rounded-2xl bg-accent/20 border-2 border-accent/40 flex items-center justify-center font-black text-2xl text-accent shadow-md">
-            {initial}
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-foreground">{name}</h3>
-            <p className="text-xs text-muted-foreground font-mono">{email}</p>
-            <span className="inline-block text-[10px] font-semibold text-accent mt-1">
-              Active Member
-            </span>
-          </div>
-        </div>
-
-        {/* Inputs */}
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-              <User className="w-3.5 h-3.5 text-muted-foreground" />
-              <span>Full Name</span>
-            </label>
-            <input
-              type="text"
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-panel-inset border border-border-subtle text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-              <Mail className="w-3.5 h-3.5 text-muted-foreground" />
-              <span>Email Address</span>
-            </label>
-            <input
-              type="email"
-              disabled
-              value={email}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-panel-inset border border-border-subtle text-xs text-muted-foreground cursor-not-allowed font-mono"
-            />
-            <p className="text-[11px] text-muted-foreground mt-1">
-              Managed via passwordless auth provider.
-            </p>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-              <Globe className="w-3.5 h-3.5 text-muted-foreground" />
-              <span>Timezone</span>
-            </label>
-            <select
-              value={timezone}
-              onChange={(e) => setTimezone(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-panel-inset border border-border-subtle text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-            >
-              <option value="Asia/Kolkata">Asia/Kolkata (IST, UTC+5:30) — Default</option>
-              <option value="UTC">UTC (Coordinated Universal Time)</option>
-              <option value="America/New_York">America/New_York (EST)</option>
-              <option value="Europe/London">Europe/London (GMT/BST)</option>
-            </select>
-          </div>
-
-          {/* Notifications */}
-          <div className="pt-2 border-t border-border-subtle space-y-3">
-            <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-              <Bell className="w-3.5 h-3.5 text-muted-foreground" />
-              <span>Notifications & Digests</span>
-            </h4>
-
-            <label className="flex items-center gap-3 p-3 rounded-xl bg-panel-inset border border-border-subtle cursor-pointer hover:bg-panel-elevated transition-colors">
-              <input
-                type="checkbox"
-                checked={emailDigest}
-                onChange={(e) => setEmailDigest(e.target.checked)}
-                className="rounded border-border-subtle text-accent focus:ring-accent"
-              />
-              <div className="text-xs">
-                <div className="font-semibold text-foreground">Daily 09:00 IST Email Digest</div>
-                <div className="text-[11px] text-muted-foreground">
-                  Receive a summary of pending action items and daily tasks.
-                </div>
+      <section className="card p-5">
+        {user ? (
+          <div className="flex items-center gap-4">
+            <Avatar name={user.name || user.email} size="lg" />
+            <div className="min-w-0 space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="truncate text-base font-semibold text-fg">{user.name || displayNameFromEmail(user.email)}</h2>
+                <RoleBadge role={user.role} />
               </div>
-            </label>
-
-            <label className="flex items-center gap-3 p-3 rounded-xl bg-panel-inset border border-border-subtle cursor-pointer hover:bg-panel-elevated transition-colors">
-              <input
-                type="checkbox"
-                checked={mentionAlerts}
-                onChange={(e) => setMentionAlerts(e.target.checked)}
-                className="rounded border-border-subtle text-accent focus:ring-accent"
-              />
-              <div className="text-xs">
-                <div className="font-semibold text-foreground">Direct @Mention Alerts</div>
-                <div className="text-[11px] text-muted-foreground">
-                  Notify immediately when tagged in meeting notes or task comments.
-                </div>
-              </div>
-            </label>
+              <p className="truncate text-sm text-fg-muted">{user.email}</p>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="flex items-center gap-4" role="status" aria-busy="true">
+            <span className="sr-only">Loading your profile…</span>
+            <div className="skeleton h-12 w-12 rounded-full" />
+            <div className="space-y-2">
+              <div className="skeleton h-4 w-40" />
+              <div className="skeleton h-3 w-56" />
+            </div>
+          </div>
+        )}
 
-        <div className="pt-4 border-t border-border-subtle flex items-center justify-between">
-          {saved ? (
-            <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-semibold">
-              <Check className="w-4 h-4" />
-              <span>Changes Saved Successfully!</span>
-            </span>
-          ) : (
-            <span className="text-xs text-muted-foreground">Local preferences stored</span>
-          )}
+        <dl className="mt-5 grid gap-4 border-t border-border pt-5 text-sm sm:grid-cols-2">
+          <div>
+            <dt className="text-xs text-fg-muted">Signing in</dt>
+            <dd className="text-fg">With this email address, by one-time link or Google. There&apos;s no password to manage.</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-fg-muted">Your access level</dt>
+            <dd className="text-fg">
+              {user ? ROLE_CHOICES.find((c) => c.role === user.role)?.hint ?? user.role : '…'} Your organization&apos;s
+              Owner or Managers set it.
+            </dd>
+          </div>
+        </dl>
+      </section>
 
-          <button
-            type="submit"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-accent text-accent-foreground font-bold text-xs tracking-wide shadow-md hover:opacity-90 transition-opacity"
-          >
-            <Save className="w-4 h-4" />
-            <span>Save Changes</span>
-          </button>
-        </div>
-      </form>
+      {/* Both live in Settings, which Executives and Clients don't have; the top bar switches the theme. */}
+      {!isReadOnlyRole(user?.role) && (
+        <section aria-labelledby="prefs-heading" className="space-y-3">
+          <h2 id="prefs-heading" className="text-sm font-semibold text-fg">
+            Preferences
+          </h2>
+          <ul className="card divide-y divide-border overflow-hidden">
+            {links.map(({ href, icon: Icon, title, text }) => (
+              <li key={href}>
+                <Link href={href} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2">
+                  <Icon className="h-4 w-4 shrink-0 text-fg-muted" aria-hidden="true" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-medium text-fg">{title}</span>
+                    <span className="block text-sm text-fg-muted">{text}</span>
+                  </span>
+                  <ChevronRight className="h-4 w-4 text-fg-subtle" aria-hidden="true" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <EmailSettings orgId={orgId} readOnly={isReadOnlyRole(user?.role)} />
+
+      <Alert tone="info">Changing your name or time zone isn&apos;t available yet.</Alert>
     </div>
   );
 }

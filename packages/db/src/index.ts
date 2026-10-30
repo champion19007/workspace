@@ -18,3 +18,8 @@ export * from './extraction-operations.js';
 export * from './task-embedding-operations.js';
 export * from './resolution-operations.js';
 export * from './approval-operations.js';
+export * from './comment-operations.js';
+export * from './file-operations.js';
+export * from './request-operations.js';
+export * from './ai-operations.js';
+export * from './email-operations.js';

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import {
   AlertTriangle,
   Calendar,
@@ -9,6 +10,7 @@ import {
   GitMerge,
   Pencil,
   PlusCircle,
+  Quote,
   RotateCw,
   User,
   Video,
@@ -23,7 +25,10 @@ import type {
   TaskDTO,
   TaskPriority,
 } from '@workspace/core';
+import { APP_TIME_ZONE } from '@workspace/core';
 import { Dialog } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
+import { formatShortDate } from '@/lib/format';
 import {
   REJECT_REASON_LABELS,
   buildEditDecision,
@@ -43,17 +48,14 @@ const STATE_LABEL: Record<ActionItemDTO['state'], string> = {
   rejected: 'Rejected',
 };
 
-const inputClass =
-  'w-full px-2.5 py-1.5 rounded-lg bg-panel-inset border border-border-subtle text-xs text-foreground focus:border-accent';
-const secondaryButton =
-  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border-subtle text-xs text-foreground hover:bg-panel-elevated transition-colors disabled:opacity-50';
-const primaryButton =
-  'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-accent text-accent-foreground font-semibold text-xs hover:opacity-90 transition-opacity disabled:opacity-50';
+const inputClass = 'field';
+const secondaryButton = 'btn btn-secondary btn-sm';
+const primaryButton = 'btn btn-primary btn-sm';
 
-/** Meeting-relative times are shown in Asia/Kolkata. */
+/** Meeting times are shown in the deployment's time zone, the one due dates are resolved in. */
 function formatIst(iso: string | null | undefined): string {
   if (!iso) return 'time unknown';
-  return `${new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' })} IST`;
+  return new Date(iso).toLocaleString(undefined, { timeZone: APP_TIME_ZONE, dateStyle: 'medium', timeStyle: 'short', timeZoneName: 'short' });
 }
 
 const toPreview = (t: ActionItemTaskSummaryDTO): TargetPreview => ({
@@ -79,30 +81,30 @@ function successMessage(r: ActionItemDecisionResultDTO): string {
 function BeforeAfter({ target, after }: { target: TargetPreview; after: { assignee: string; due: string; note: string } }) {
   const excerpt = (s: string | null) => (s ? (s.length > 80 ? `${s.slice(0, 80)}…` : s) : 'Empty');
   return (
-    <table className="w-full text-left text-[11px] border-collapse">
+    <table className="w-full border-collapse text-left text-xs">
       <caption className="sr-only">Changes to {target.key} if this update is approved</caption>
-      <thead className="text-muted-foreground">
+      <thead className="text-fg-muted">
         <tr>
-          <th scope="col" className="py-1 pr-2 font-medium">Field</th>
-          <th scope="col" className="py-1 pr-2 font-medium">Before</th>
-          <th scope="col" className="py-1 font-medium">After</th>
+          <th scope="col" className="py-1.5 pr-3 font-medium">Field</th>
+          <th scope="col" className="py-1.5 pr-3 font-medium">Now</th>
+          <th scope="col" className="py-1.5 font-medium">After approval</th>
         </tr>
       </thead>
       <tbody className="align-top">
-        <tr className="border-t border-border-subtle">
-          <th scope="row" className="py-1 pr-2 font-medium text-muted-foreground">Assignee</th>
-          <td className="py-1 pr-2">{target.assigneeName ?? 'Unassigned'}</td>
-          <td className="py-1 text-foreground">{after.assignee}</td>
+        <tr className="border-t border-border">
+          <th scope="row" className="py-1.5 pr-3 font-medium text-fg-muted">Assignee</th>
+          <td className="py-1.5 pr-3 text-fg-muted">{target.assigneeName ?? 'Unassigned'}</td>
+          <td className="py-1.5 text-fg">{after.assignee}</td>
         </tr>
-        <tr className="border-t border-border-subtle">
-          <th scope="row" className="py-1 pr-2 font-medium text-muted-foreground">Due date</th>
-          <td className="py-1 pr-2 font-mono">{target.dueDate ?? 'None'}</td>
-          <td className="py-1 font-mono text-foreground">{after.due}</td>
+        <tr className="border-t border-border">
+          <th scope="row" className="py-1.5 pr-3 font-medium text-fg-muted">Due date</th>
+          <td className="py-1.5 pr-3 tabular-nums text-fg-muted">{target.dueDate ?? 'None'}</td>
+          <td className="py-1.5 tabular-nums text-fg">{after.due}</td>
         </tr>
-        <tr className="border-t border-border-subtle">
-          <th scope="row" className="py-1 pr-2 font-medium text-muted-foreground">Description</th>
-          <td className="py-1 pr-2">{excerpt(target.description)}</td>
-          <td className="py-1 text-foreground">{after.note ? `Unchanged, plus note: "${after.note}"` : 'Unchanged'}</td>
+        <tr className="border-t border-border">
+          <th scope="row" className="py-1.5 pr-3 font-medium text-fg-muted">Description</th>
+          <td className="py-1.5 pr-3 text-fg-muted">{excerpt(target.description)}</td>
+          <td className="py-1.5 text-fg">{after.note ? `Unchanged, plus note: "${after.note}"` : 'Unchanged'}</td>
         </tr>
       </tbody>
     </table>
@@ -162,82 +164,81 @@ export function ActionItemCard({ item, orgId, onItemChange, onJumpToCue, showMee
   };
 
   return (
-    <article
-      aria-labelledby={textId}
-      className="p-3.5 rounded-lg bg-panel border border-border-subtle hover:border-accent/30 transition-colors space-y-2.5 text-xs"
-    >
+    <article aria-labelledby={textId} className="card space-y-3 p-4 text-sm">
       {showMeeting && item.meeting && (
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-          <Video className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
-          <a href={`/orgs/${orgId}/meetings?meeting=${item.meetingId}`} className="font-semibold text-foreground hover:underline">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-muted">
+          <Video className="h-3.5 w-3.5" aria-hidden="true" />
+          <Link href={`/orgs/${orgId}/meetings?meeting=${item.meetingId}`} className="font-medium text-fg hover:underline">
             {item.meeting.title || 'Untitled meeting'}
-          </a>
+          </Link>
           <span>{formatIst(item.meeting.startedAt)}</span>
-          <span>· {item.project ? `Project: ${item.project.name}` : 'Not routed to a project'}</span>
+          <span>· {item.project ? item.project.name : 'No project yet'}</span>
         </div>
       )}
 
       <div className="flex flex-wrap items-center gap-1.5">
         {item.proposalType === 'update_task' ? (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
-            <GitMerge className="w-3 h-3" aria-hidden="true" /> Update existing task
-          </span>
+          <Badge variant="warning" icon={GitMerge}>
+            Update existing task
+          </Badge>
         ) : (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-            <PlusCircle className="w-3 h-3" aria-hidden="true" /> New task
-          </span>
+          <Badge variant="accent" icon={PlusCircle}>
+            New task
+          </Badge>
         )}
-        <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-panel-inset text-foreground border border-border-subtle">
-          {STATE_LABEL[item.state]}
-        </span>
-        <span className="px-2 py-0.5 rounded text-[10px] font-mono text-muted-foreground border border-border-subtle">
-          {Math.round(item.confidence * 100)}% confidence
+        {item.state !== 'suggested' && <Badge>{STATE_LABEL[item.state]}</Badge>}
+        <span className="text-xs text-fg-muted" title="How sure the assistant is that this is an action item">
+          {Math.round(item.confidence * 100)}% sure
         </span>
       </div>
 
-      <p id={textId} className="text-sm font-medium text-foreground leading-snug">
+      <p id={textId} className="font-medium leading-snug text-fg">
         {item.text}
       </p>
 
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-muted">
         <span className="flex items-center gap-1">
-          <User className="w-3 h-3" aria-hidden="true" />
-          Suggested owner:{' '}
-          <strong className="text-foreground">
+          <User className="h-3.5 w-3.5" aria-hidden="true" />
+          Owner:{' '}
+          <span className="font-medium text-fg">
             {item.suggestedOwner
               ? item.suggestedOwner.name || item.suggestedOwner.email
               : item.ownerName
                 ? `${item.ownerName} (not matched to a member)`
                 : 'None'}
-          </strong>
+          </span>
         </span>
         <span className="flex items-center gap-1">
-          <Calendar className="w-3 h-3" aria-hidden="true" />
-          Suggested due:{' '}
-          <strong className="text-foreground font-mono">
-            {item.suggestedDue ?? (item.duePhrase ? `"${item.duePhrase}" (no date resolved)` : 'None')}
-          </strong>
+          <Calendar className="h-3.5 w-3.5" aria-hidden="true" />
+          Due:{' '}
+          <span className="font-medium text-fg">
+            {item.suggestedDue
+              ? formatShortDate(item.suggestedDue)
+              : item.duePhrase
+                ? `“${item.duePhrase}” (no date found)`
+                : 'None'}
+          </span>
         </span>
       </div>
 
       {item.proposalType === 'update_task' && (
-        <div className="p-2.5 rounded bg-panel-inset border border-border-subtle space-y-1.5">
+        <div className="space-y-2 rounded-lg border border-border bg-surface-2/60 p-3">
           {target ? (
             <>
-              <div className="text-[11px] font-semibold text-foreground">
-                Target task: {target.key} — {target.title}
+              <div className="text-xs font-medium text-fg">
+                Updates <span className="font-mono">{target.key}</span> · {target.title}
               </div>
               {item.state === 'suggested' && (target.status === 'done' || target.archivedAt) ? (
-                <p className="flex gap-1.5 text-[11px] text-amber-300">
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                  Warning: the target task is completed or archived, so this update cannot be applied. Use Edit to create a
-                  new task instead, or reject.
+                <p className="flex gap-1.5 text-xs text-warning">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  That task is done or archived, so this update can't be applied. Use Edit to create a new task instead, or
+                  reject.
                 </p>
               ) : item.state === 'suggested' && target.version !== item.targetTaskVersion ? (
-                <p className="flex gap-1.5 text-[11px] text-amber-300">
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                  Warning: the target task changed after this suggestion was made (version {item.targetTaskVersion} → {target.version}).
-                  Approve will be refused; use Edit to apply the update to the current task.
+                <p className="flex gap-1.5 text-xs text-warning">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  That task changed after this suggestion was made, so Approve will be refused. Use Edit to apply the update
+                  to the current version.
                 </p>
               ) : null}
               {item.state === 'suggested' && (
@@ -254,27 +255,28 @@ export function ActionItemCard({ item, orgId, onItemChange, onJumpToCue, showMee
               )}
             </>
           ) : (
-            <p className="text-[11px] text-muted-foreground">Updates an existing task in a project you cannot see.</p>
+            <p className="text-xs text-fg-muted">Updates an existing task in a project you can't see.</p>
           )}
         </div>
       )}
 
       {item.evidence.length > 0 && (
-        <ul className="space-y-1" aria-label="Transcript evidence">
+        <ul className="space-y-1" aria-label="Where this was said">
           {item.evidence.map((ev, idx) => (
             <li key={idx}>
               {onJumpToCue ? (
                 <button
                   type="button"
                   onClick={() => onJumpToCue(ev.seq)}
-                  className="inline-flex items-start gap-1 px-2 py-1 rounded text-[10px] font-mono bg-accent/10 hover:bg-accent/20 text-accent border border-accent/20 transition-colors text-left"
+                  className="flex max-w-full items-start gap-1.5 text-left text-xs text-fg-muted transition-colors hover:text-accent-text"
+                  title="Show this line in the transcript"
                 >
-                  <ExternalLink className="w-2.5 h-2.5 shrink-0 mt-0.5" aria-hidden="true" />
-                  Jump to cue #{ev.seq}: &quot;{ev.canonicalExcerpt || ev.quote}&quot;
+                  <Quote className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+                  <span>“{ev.canonicalExcerpt || ev.quote}”</span>
                 </button>
               ) : (
-                <blockquote className="px-2 py-1 rounded text-[11px] italic text-muted-foreground bg-panel-inset border border-border-subtle">
-                  Cue #{ev.seq}: &quot;{ev.canonicalExcerpt || ev.quote}&quot;
+                <blockquote className="flex items-start gap-1.5 border-l-2 border-border-strong pl-2 text-xs text-fg-muted">
+                  “{ev.canonicalExcerpt || ev.quote}”
                 </blockquote>
               )}
             </li>
@@ -283,63 +285,62 @@ export function ActionItemCard({ item, orgId, onItemChange, onJumpToCue, showMee
       )}
 
       {item.state !== 'suggested' && (
-        <div className="p-2.5 rounded bg-panel-inset border border-border-subtle space-y-1 text-[11px]">
-          <div className="flex items-center gap-1.5 font-semibold text-foreground">
+        <div className="space-y-1 rounded-lg bg-surface-2/60 p-3 text-xs">
+          <div className="flex items-center gap-1.5 font-medium text-fg">
             {item.state === 'rejected' ? (
-              <XCircle className="w-3.5 h-3.5 text-rose-400" aria-hidden="true" />
+              <XCircle className="h-3.5 w-3.5 text-danger" aria-hidden="true" />
             ) : (
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
+              <CheckCircle2 className="h-3.5 w-3.5 text-success" aria-hidden="true" />
             )}
             {item.state === 'rejected'
               ? `Rejected: ${item.decisionReason ? REJECT_REASON_LABELS[item.decisionReason] : 'no reason recorded'}`
               : STATE_LABEL[item.state]}
-            {item.decidedAt && <span className="font-normal text-muted-foreground">· {formatIst(item.decidedAt)}</span>}
+            {item.decidedAt && <span className="font-normal text-fg-muted">· {formatIst(item.decidedAt)}</span>}
           </div>
-          {item.decisionNote && <p className="text-muted-foreground">Note: {item.decisionNote}</p>}
+          {item.decisionNote && <p className="text-fg-muted">Note: {item.decisionNote}</p>}
           {item.task ? (
-            <a
+            <Link
               href={`/orgs/${orgId}/projects/${item.task.projectId}/tasks?task=${item.task.id}`}
-              className="inline-flex items-center gap-1 text-accent hover:underline"
+              className="link inline-flex items-center gap-1"
             >
-              <ExternalLink className="w-3 h-3" aria-hidden="true" />
-              Open task {item.task.key}: {item.task.title}
-            </a>
+              <ExternalLink className="h-3 w-3" aria-hidden="true" />
+              Open {item.task.key}: {item.task.title}
+            </Link>
           ) : item.taskId ? (
-            <p className="text-muted-foreground">The linked task is in a project you cannot see.</p>
+            <p className="text-fg-muted">The task is in a project you can't see.</p>
           ) : null}
         </div>
       )}
 
       {item.canDecide && !item.meeting?.nodeId && (
-        <p className="text-[11px] text-muted-foreground">Route this meeting to a project before deciding its suggestions.</p>
+        <p className="text-xs text-fg-muted">Choose this meeting's project before deciding its suggestions.</p>
       )}
 
       {item.state === 'suggested' && item.superseded && (
-        <p className="text-[11px] text-muted-foreground">
-          Outdated: the meeting was re-processed or its processing was paused after this suggestion was made, so it can no
-          longer be decided.
+        <p className="text-xs text-fg-muted">
+          Outdated: the meeting was processed again (or paused) after this suggestion was made, so it can no longer be
+          decided.
         </p>
       )}
 
       {item.state === 'suggested' && !item.superseded && item.consentWithdrawn && (
-        <p className="text-[11px] text-muted-foreground">
-          On hold: meeting processing consent is no longer in effect (the host opted out or was disabled by an admin), so
-          this suggestion cannot be decided.
+        <p className="text-xs text-fg-muted">
+          On hold: the host's consent for processing is no longer in effect (they opted out or an admin disabled it), so
+          this suggestion can't be decided.
         </p>
       )}
 
       {canDecide && needsAck && (
-        <label className="flex items-start gap-2 p-2 rounded bg-amber-500/10 border border-amber-500/20 text-amber-200">
+        <label className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning-subtle p-2.5 text-xs text-warning">
           <input type="checkbox" checked={ackDedup} onChange={(e) => setAckDedup(e.target.checked)} className="mt-0.5" />
           <span>
-            The duplicate check did not complete ({item.dedupStatus ?? 'pending'}). I confirm this is not already an open
-            task.
+            The duplicate check didn't finish ({item.dedupStatus ?? 'pending'}). I confirm this isn't already an open task.
           </span>
         </label>
       )}
 
       {canDecide && (
-        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border-subtle">
+        <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
           <button
             type="button"
             onClick={() => decide({ decision: 'approve', ...(needsAck ? { acknowledgeIncompleteDedup: true } : {}) }, false)}
@@ -347,15 +348,11 @@ export function ActionItemCard({ item, orgId, onItemChange, onJumpToCue, showMee
             aria-describedby={textId}
             className={primaryButton}
           >
-            {busy ? (
-              <RotateCw className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
-            ) : (
-              <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
-            )}
+            {busy ? <RotateCw className="animate-spin" aria-hidden="true" /> : <CheckCircle2 aria-hidden="true" />}
             Approve
           </button>
           <button type="button" onClick={() => setDialog('edit')} disabled={busy} aria-describedby={textId} className={secondaryButton}>
-            <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
+            <Pencil aria-hidden="true" />
             Edit…
           </button>
           <button
@@ -363,9 +360,9 @@ export function ActionItemCard({ item, orgId, onItemChange, onJumpToCue, showMee
             onClick={() => setDialog('reject')}
             disabled={busy}
             aria-describedby={textId}
-            className={`${secondaryButton} hover:text-rose-300`}
+            className="btn btn-ghost btn-sm hover:text-danger"
           >
-            <XCircle className="w-3.5 h-3.5" aria-hidden="true" />
+            <XCircle aria-hidden="true" />
             Reject…
           </button>
         </div>
@@ -378,8 +375,8 @@ export function ActionItemCard({ item, orgId, onItemChange, onJumpToCue, showMee
         aria-live="polite"
         className={
           status
-            ? `flex items-start gap-1.5 p-2 rounded border text-[11px] ${
-                status.ok ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-200' : 'bg-rose-500/10 border-rose-500/20 text-rose-200'
+            ? `flex items-start gap-1.5 rounded-lg border p-2.5 text-xs ${
+                status.ok ? 'border-success/30 bg-success-subtle text-success' : 'border-danger/30 bg-danger-subtle text-danger'
               }`
             : undefined
         }
@@ -387,9 +384,9 @@ export function ActionItemCard({ item, orgId, onItemChange, onJumpToCue, showMee
         {status && (
           <>
             {status.ok ? (
-              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             ) : (
-              <AlertTriangle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             )}
             <span>
               <strong>{status.ok ? 'Saved: ' : 'Not saved: '}</strong>
@@ -454,9 +451,9 @@ function RejectDecisionDialog({ isOpen, busy, onClose, onSubmit }: DecisionDialo
       description="No task is created or changed. The reason is recorded to improve future suggestions."
       maxWidthClass="max-w-md"
     >
-      <form onSubmit={submit} className="space-y-4 text-xs text-foreground">
+      <form onSubmit={submit} className="space-y-4 text-sm text-fg">
         <fieldset className="space-y-1.5">
-          <legend className="font-semibold mb-1.5">Reason</legend>
+          <legend className="label">Reason</legend>
           {(Object.entries(REJECT_REASON_LABELS) as Array<[ActionItemRejectReason, string]>).map(([value, label]) => (
             <label key={value} className="flex items-center gap-2">
               <input type="radio" name="reject-reason" value={value} checked={reason === value} onChange={() => setReason(value)} />
@@ -465,20 +462,20 @@ function RejectDecisionDialog({ isOpen, busy, onClose, onSubmit }: DecisionDialo
           ))}
         </fieldset>
         <label className="block space-y-1">
-          <span className="font-semibold">Note (optional)</span>
+          <span className="label">Note (optional)</span>
           <textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} rows={3} className={inputClass} />
         </label>
         {error && (
-          <p role="alert" className="p-2 rounded bg-rose-500/10 border border-rose-500/20 text-rose-200">
+          <p role="alert" className="rounded-lg border border-danger/30 bg-danger-subtle p-2.5 text-danger">
             {error}
           </p>
         )}
-        <div className="flex justify-end gap-2 pt-2 border-t border-border-subtle">
+        <div className="flex justify-end gap-2 border-t border-border pt-4">
           <button type="button" onClick={onClose} className={secondaryButton}>
             Cancel
           </button>
           <button type="submit" disabled={busy} className={primaryButton}>
-            {busy && <RotateCw className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />}
+            {busy && <RotateCw className="animate-spin" aria-hidden="true" />}
             Reject suggestion
           </button>
         </div>
@@ -655,18 +652,18 @@ function EditDecisionDialog({ item, orgId, isOpen, busy, onClose, onSubmit }: De
       maxWidthClass="max-w-xl"
     >
       {!form ? (
-        <p role="status" className="text-xs text-muted-foreground flex items-center gap-2">
+        <p role="status" className="text-xs text-fg-muted flex items-center gap-2">
           <RotateCw className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> Loading members and projects…
         </p>
       ) : (
-        <form onSubmit={submit} className="space-y-4 text-xs text-foreground">
-          <p className="p-2 rounded bg-panel-inset border border-border-subtle text-muted-foreground">
-            Suggestion: <span className="text-foreground">{item.text}</span>
+        <form onSubmit={submit} className="space-y-4 text-sm text-fg">
+          <p className="rounded-lg bg-surface-2 p-3 text-fg-muted">
+            Suggestion: <span className="text-fg">{item.text}</span>
           </p>
 
           {targetOptions.length > 0 && (
             <fieldset className="space-y-1.5">
-              <legend className="font-semibold mb-1.5">Apply as</legend>
+              <legend className="label">Apply as</legend>
               <label className="flex items-center gap-2">
                 <input type="radio" name={`mode-${item.id}`} checked={form.mode === 'create'} onChange={() => switchMode('create')} />
                 Create a new task
@@ -682,7 +679,7 @@ function EditDecisionDialog({ item, orgId, isOpen, busy, onClose, onSubmit }: De
             <>
               {targetOptions.length > 1 && (
                 <label className="block space-y-1">
-                  <span className="font-semibold">Task to update</span>
+                  <span className="label">Task to update</span>
                   <select value={form.targetTaskId} onChange={(e) => void chooseTarget(e.target.value)} className={inputClass}>
                     {targetOptions.map((o) => (
                       <option key={o.id} value={o.id}>
@@ -693,24 +690,24 @@ function EditDecisionDialog({ item, orgId, isOpen, busy, onClose, onSubmit }: De
                 </label>
               )}
               <label className="block space-y-1">
-                <span className="font-semibold">Note appended to the task description</span>
+                <span className="label">Note appended to the task description</span>
                 <textarea value={form.note} onChange={(e) => set({ note: e.target.value })} rows={3} className={inputClass} />
               </label>
             </>
           ) : (
             <>
               <label className="block space-y-1">
-                <span className="font-semibold">Title</span>
+                <span className="label">Title</span>
                 <input value={form.title} onChange={(e) => set({ title: e.target.value })} required maxLength={500} className={inputClass} />
               </label>
               <label className="block space-y-1">
-                <span className="font-semibold">Description (optional)</span>
+                <span className="label">Description (optional)</span>
                 <textarea value={form.description} onChange={(e) => set({ description: e.target.value })} rows={3} className={inputClass} />
-                <span className="block text-[11px] text-muted-foreground">A line linking back to the meeting is added automatically.</span>
+                <span className="block text-xs text-fg-muted">A line linking back to the meeting is added automatically.</span>
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <label className="block space-y-1">
-                  <span className="font-semibold">Project</span>
+                  <span className="label">Project</span>
                   <select value={form.projectId} onChange={(e) => set({ projectId: e.target.value })} className={inputClass}>
                     {projectOptions.map((p) => (
                       <option key={p.id} value={p.id}>
@@ -720,7 +717,7 @@ function EditDecisionDialog({ item, orgId, isOpen, busy, onClose, onSubmit }: De
                   </select>
                 </label>
                 <label className="block space-y-1">
-                  <span className="font-semibold">Priority</span>
+                  <span className="label">Priority</span>
                   <select value={form.priority} onChange={(e) => set({ priority: e.target.value as TaskPriority })} className={inputClass}>
                     <option value="low">Low</option>
                     <option value="medium">Medium</option>
@@ -734,7 +731,7 @@ function EditDecisionDialog({ item, orgId, isOpen, busy, onClose, onSubmit }: De
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="block space-y-1">
-              <span className="font-semibold">Assignee</span>
+              <span className="label">Assignee</span>
               <select
                 value={form.assigneeId}
                 onChange={(e) => set({ assigneeId: e.target.value })}
@@ -748,23 +745,23 @@ function EditDecisionDialog({ item, orgId, isOpen, busy, onClose, onSubmit }: De
                   </option>
                 ))}
               </select>
-              {!eligible && <span className="block text-[11px] text-muted-foreground">Loading eligible members…</span>}
+              {!eligible && <span className="block text-xs text-fg-muted">Loading eligible members…</span>}
             </label>
             <label className="block space-y-1">
-              <span className="font-semibold">Due date</span>
+              <span className="label">Due date</span>
               <input type="date" value={form.dueDate} onChange={(e) => set({ dueDate: e.target.value })} className={inputClass} />
             </label>
           </div>
           {item.suggestedOwnerId && eligible && !eligible(item.suggestedOwnerId) && (
-            <p className="text-[11px] text-amber-300">
+            <p className="text-xs text-warning">
               Warning: the suggested owner ({item.suggestedOwner?.name || item.suggestedOwner?.email}) cannot be assigned in this
               project.
             </p>
           )}
 
           {form.mode === 'update' && target && (
-            <div className="p-2.5 rounded bg-panel-inset border border-border-subtle space-y-1">
-              <div className="text-[11px] font-semibold">
+            <div className="space-y-1 rounded-lg border border-border bg-surface-2/60 p-3">
+              <div className="text-xs font-medium">
                 {target.key} — {target.title}
               </div>
               <BeforeAfter
@@ -775,7 +772,7 @@ function EditDecisionDialog({ item, orgId, isOpen, busy, onClose, onSubmit }: De
           )}
 
           {editNeedsDedupAck(item, form) && (
-            <label className="flex items-start gap-2 p-2 rounded bg-amber-500/10 border border-amber-500/20 text-amber-200">
+            <label className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning-subtle p-2.5 text-warning">
               <input
                 type="checkbox"
                 checked={form.acknowledgeIncompleteDedup}
@@ -792,17 +789,17 @@ function EditDecisionDialog({ item, orgId, isOpen, busy, onClose, onSubmit }: De
           )}
 
           {error && (
-            <p role="alert" className="p-2 rounded bg-rose-500/10 border border-rose-500/20 text-rose-200">
+            <p role="alert" className="rounded-lg border border-danger/30 bg-danger-subtle p-2.5 text-danger">
               {error}
             </p>
           )}
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-border-subtle">
+          <div className="flex justify-end gap-2 border-t border-border pt-4">
             <button type="button" onClick={onClose} className={secondaryButton}>
               Cancel
             </button>
             <button type="submit" disabled={busy} className={primaryButton}>
-              {busy && <RotateCw className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />}
+              {busy && <RotateCw className="animate-spin" aria-hidden="true" />}
               {form.mode === 'create' ? 'Create task' : 'Update task'}
             </button>
           </div>

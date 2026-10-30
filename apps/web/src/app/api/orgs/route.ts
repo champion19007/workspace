@@ -7,7 +7,7 @@ import {
   verifyAndRefreshSession,
   serializeSession,
 } from '@/lib/session';
-import { createOrganizationWithOwner, getUserOrganizations } from '@workspace/db';
+import { createNode, createOrganizationWithOwner, getUserOrganizations } from '@workspace/db';
 import { rotateSession, DomainError } from '@workspace/core';
 
 const CreateOrgSchema = z.object({
@@ -43,6 +43,21 @@ export async function POST(request: NextRequest) {
       plan: parsed.data.plan,
       retentionDays: parsed.data.retentionDays,
     });
+
+    // Projects always live in a team, so a new organization starts with one: the first project can be
+    // created straight away. Not fatal if it fails; teams can also be added from the Teams page.
+    try {
+      await createNode(db, {
+        orgId: result.org.id,
+        userId: session.userId,
+        role: 'owner',
+        name: 'General',
+        kind: 'team',
+        description: 'Your starting team. Rename it, or add a team per client or department as you grow.',
+      });
+    } catch (err) {
+      console.error('Default team creation failed:', err);
+    }
 
     // Rotate session to activate new organization
     const rotated = rotateSession(session, {

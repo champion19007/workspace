@@ -1,19 +1,15 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getServerContext } from '@/lib/server-context';
 import { generateSecureRandomToken } from '@workspace/core';
-import { OAUTH_STATE_COOKIE_NAME } from '@/lib/session';
+import { OAUTH_STATE_COOKIE_NAME, PKCE_COOKIE_NAME, authCallbackUrl, getPkceCookieOptions } from '@/lib/session';
 
 export async function GET(request: NextRequest) {
   try {
     const { ports } = getServerContext();
-    const host = request.headers.get('host') || 'localhost:3000';
-    const protocol = request.headers.get('x-forwarded-proto') || 'http';
-    const callbackUrl = `${protocol}://${host}/api/auth/callback`;
-
     const state = generateSecureRandomToken(16);
-    const { url } = await ports.auth.getOAuthUrl({
+    const { url, codeVerifier } = await ports.auth.getOAuthUrl({
       provider: 'google',
-      redirectUrl: callbackUrl,
+      redirectUrl: authCallbackUrl(request, request.nextUrl.searchParams.get('returnTo')),
       state,
     });
 
@@ -26,6 +22,7 @@ export async function GET(request: NextRequest) {
       path: '/',
       maxAge: 600, // 10 minutes
     });
+    if (codeVerifier) response.cookies.set(PKCE_COOKIE_NAME, codeVerifier, getPkceCookieOptions());
 
     return response;
   } catch (err) {

@@ -1,130 +1,140 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import {
+  ACCENT_CSS_STORAGE_KEY,
+  ACCENT_PRESETS,
+  ACCENT_STORAGE_KEY,
+  ACCENT_STYLE_ID,
+  DEFAULT_ACCENT,
+  LEGACY_DEFAULT_ACCENT,
+  THEME_STORAGE_KEY,
+  buildAccentCss,
+  isHexColor,
+  type AccentPreset,
+  type ThemePreference,
+} from '@/lib/theme';
 
-export interface AccentPreset {
-  name: string;
-  hex: string;
-}
-
-export const ACCENT_PRESETS: AccentPreset[] = [
-  { name: 'Default Orchid', hex: '#d86dfc' },
-  { name: 'Sky Blue', hex: '#38bdf8' },
-  { name: 'Emerald', hex: '#34d399' },
-  { name: 'Rose', hex: '#f43f5e' },
-  { name: 'Amber', hex: '#fbbf24' },
-  { name: 'Indigo', hex: '#818cf8' },
-];
-
-export const DEFAULT_ACCENT = '#d86dfc';
+export {
+  ACCENT_PRESETS,
+  DEFAULT_ACCENT,
+  getBestContrastForeground,
+  getRelativeLuminance,
+} from '@/lib/theme';
+export type { AccentPreset, ThemePreference } from '@/lib/theme';
 
 interface ThemeContextType {
+  /** Saved preference; null until read from storage after mount. */
+  theme: ThemePreference | null;
+  resolvedTheme: 'light' | 'dark';
+  setTheme: (theme: ThemePreference) => void;
   accentColor: string;
-  accentForeground: string;
   setAccentColor: (hex: string) => void;
   resetAccentColor: () => void;
   presets: AccentPreset[];
 }
 
 const ThemeContext = createContext<ThemeContextType>({
+  theme: null,
+  resolvedTheme: 'light',
+  setTheme: () => {},
   accentColor: DEFAULT_ACCENT,
-  accentForeground: '#0d0614',
   setAccentColor: () => {},
   resetAccentColor: () => {},
   presets: ACCENT_PRESETS,
 });
 
-/**
- * Calculates relative luminance according to WCAG 2.1 specifications.
- */
-export function getRelativeLuminance(hex: string): number {
-  const cleanHex = hex.replace('#', '');
-  if (cleanHex.length !== 6) return 0.5;
-
-  const r = parseInt(cleanHex.substring(0, 2), 16) / 255;
-  const g = parseInt(cleanHex.substring(2, 4), 16) / 255;
-  const b = parseInt(cleanHex.substring(4, 6), 16) / 255;
-
-  const toLinear = (c: number) =>
-    c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-
-  const rLin = toLinear(r);
-  const gLin = toLinear(g);
-  const bLin = toLinear(b);
-
-  return 0.2126 * rLin + 0.7152 * gLin + 0.0722 * bLin;
+function store(key: string, value: string | null) {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch {
+    // Storage unavailable (private mode, blocked): the choice still applies for this visit.
+  }
 }
 
-/**
- * Chooses the foreground color (#0d0614 or #ffffff) that delivers the highest WCAG contrast.
- */
-export function getBestContrastForeground(hex: string): string {
-  const lum = getRelativeLuminance(hex);
-  const darkLum = 0.005; // ~ #0d0614
-  const lightLum = 1.0; // ~ #ffffff
-
-  const darkRatio = (lum + 0.05) / (darkLum + 0.05);
-  const lightRatio = (lightLum + 0.05) / (lum + 0.05);
-
-  return darkRatio >= lightRatio ? '#0d0614' : '#ffffff';
+/** Writes the accent override style tag (none for the default accent) and caches it for the init script. */
+function applyAccent(hex: string) {
+  const isDefault = hex.toLowerCase() === DEFAULT_ACCENT;
+  let el = document.getElementById(ACCENT_STYLE_ID);
+  if (isDefault) {
+    el?.remove();
+    store(ACCENT_CSS_STORAGE_KEY, null);
+    return;
+  }
+  const css = buildAccentCss(hex);
+  if (!el) {
+    el = document.createElement('style');
+    el.id = ACCENT_STYLE_ID;
+    document.head.appendChild(el);
+  }
+  el.textContent = css;
+  store(ACCENT_CSS_STORAGE_KEY, css);
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [accentColor, setAccentColorState] = useState<string>(DEFAULT_ACCENT);
-  const [accentForeground, setAccentForegroundState] = useState<string>('#0d0614');
+  const [theme, setThemeState] = useState<ThemePreference | null>(null);
+  const [systemDark, setSystemDark] = useState(false);
+  const [accentColor, setAccentColorState] = useState(DEFAULT_ACCENT);
 
-  const applyColors = (hex: string) => {
-    if (!/^#[0-9A-Fa-f]{6}$/.test(hex)) return;
-
-    const fg = getBestContrastForeground(hex);
-    setAccentColorState(hex);
-    setAccentForegroundState(fg);
-
-    if (typeof document !== 'undefined') {
-      const root = document.documentElement;
-      root.style.setProperty('--accent', hex);
-      root.style.setProperty('--accent-foreground', fg);
-      root.style.setProperty('--accent-muted', `${hex}26`); // 15% opacity
-    }
-  };
-
+  // Read saved choices once mounted. Until then the init script in <head> has already applied them,
+  // so nothing here touches the DOM before `theme` is known (that would flash the wrong theme).
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('workspace_accent_color');
-      if (saved && /^#[0-9A-Fa-f]{6}$/.test(saved)) {
-        applyColors(saved);
-      } else {
-        applyColors(DEFAULT_ACCENT);
-      }
-    } catch {
-      // Storage unavailable or SSR
-      applyColors(DEFAULT_ACCENT);
-    }
-  }, []);
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    setSystemDark(media.matches);
+    const onChange = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+    media.addEventListener('change', onChange);
 
-  const setAccentColor = (hex: string) => {
-    applyColors(hex);
+    let savedTheme: string | null = null;
+    let savedAccent: string | null = null;
     try {
-      localStorage.setItem('workspace_accent_color', hex);
-    } catch {
-      // ignore storage errors
-    }
-  };
-
-  const resetAccentColor = () => {
-    applyColors(DEFAULT_ACCENT);
-    try {
-      localStorage.removeItem('workspace_accent_color');
+      savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+      savedAccent = localStorage.getItem(ACCENT_STORAGE_KEY);
     } catch {
       // ignore
     }
-  };
+    setThemeState(savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : 'system');
+
+    const accent =
+      savedAccent && isHexColor(savedAccent) && savedAccent.toLowerCase() !== LEGACY_DEFAULT_ACCENT
+        ? savedAccent
+        : DEFAULT_ACCENT;
+    if (savedAccent && accent === DEFAULT_ACCENT) store(ACCENT_STORAGE_KEY, null);
+    setAccentColorState(accent);
+    applyAccent(accent);
+
+    return () => media.removeEventListener('change', onChange);
+  }, []);
+
+  const resolvedTheme: 'light' | 'dark' =
+    theme === 'dark' || (theme !== 'light' && systemDark) ? 'dark' : 'light';
+
+  useEffect(() => {
+    if (theme === null) return;
+    document.documentElement.classList.toggle('dark', resolvedTheme === 'dark');
+  }, [theme, resolvedTheme]);
+
+  const setTheme = useCallback((next: ThemePreference) => {
+    setThemeState(next);
+    store(THEME_STORAGE_KEY, next === 'system' ? null : next);
+  }, []);
+
+  const setAccentColor = useCallback((hex: string) => {
+    if (!isHexColor(hex)) return;
+    setAccentColorState(hex);
+    applyAccent(hex);
+    store(ACCENT_STORAGE_KEY, hex.toLowerCase() === DEFAULT_ACCENT ? null : hex);
+  }, []);
+
+  const resetAccentColor = useCallback(() => setAccentColor(DEFAULT_ACCENT), [setAccentColor]);
 
   return (
     <ThemeContext.Provider
       value={{
+        theme,
+        resolvedTheme,
+        setTheme,
         accentColor,
-        accentForeground,
         setAccentColor,
         resetAccentColor,
         presets: ACCENT_PRESETS,

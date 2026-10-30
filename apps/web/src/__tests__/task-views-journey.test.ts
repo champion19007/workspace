@@ -23,6 +23,7 @@ describe('Web Task Views Journey — Board Moves, Ordering & My Tasks Filtering'
     priority: 'high',
     assigneeId: 'user-1',
     assignee: { id: 'user-1', name: 'Dev One', email: 'dev1@example.com', avatarUrl: null },
+    startDate: null,
     dueDate: '2026-10-01', // Overdue relative to 2026-10-06
     rank: 'a0',
     version: 1,

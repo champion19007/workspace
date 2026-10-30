@@ -1,10 +1,13 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { User, Settings, LogOut, MoreVertical, Shield } from 'lucide-react';
+import { User, Settings, LogOut, ChevronsUpDown, Keyboard, Sun, Moon, Monitor, Check } from 'lucide-react';
 import { useShell } from './shell-context';
+import { useTheme, type ThemePreference } from '../theme-provider';
+import { Avatar } from '../ui/avatar';
+import { useDismiss } from '../ui/use-dismiss';
 
 export interface UserSessionInfo {
   id: string;
@@ -13,130 +16,121 @@ export interface UserSessionInfo {
   role: string;
 }
 
-export function AccountMenu({
-  user,
-  orgId,
-}: {
-  user: UserSessionInfo;
-  orgId: string;
-}) {
+/** "maya.chen@x" -> "Maya Chen": the session carries only the email. */
+export function displayNameFromEmail(email: string): string {
+  return email
+    .split('@')[0]!
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+const THEME_OPTIONS: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'dark', label: 'Dark', icon: Moon },
+  { value: 'system', label: 'System', icon: Monitor },
+];
+
+export function AccountMenu({ user, orgId }: { user: UserSessionInfo | null; orgId: string }) {
   const [isOpen, setIsOpen] = useState(false);
   const router = useRouter();
-  const { setIsSettingsDrawerOpen } = useShell();
+  const { setIsShortcutsDialogOpen } = useShell();
+  const { theme, setTheme } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
+  useDismiss(isOpen, () => setIsOpen(false), containerRef);
 
-  useEffect(() => {
-    const handleOutsideClick = (e: MouseEvent) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(e.target as Node)
-      ) {
-        setIsOpen(false);
-      }
-    };
-
-    if (isOpen) {
-      document.addEventListener('mousedown', handleOutsideClick);
-      return () => document.removeEventListener('mousedown', handleOutsideClick);
-    }
-  }, [isOpen]);
+  if (!user) {
+    return (
+      <div className="flex h-11 items-center gap-2.5 px-1.5" aria-hidden="true">
+        <div className="skeleton h-8 w-8 rounded-full" />
+        <div className="flex-1 space-y-1.5">
+          <div className="skeleton h-3 w-24" />
+          <div className="skeleton h-2.5 w-32" />
+        </div>
+      </div>
+    );
+  }
 
   const handleLogout = async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
     } catch {
-      // ignore
+      // ignore: the session cookie is cleared server-side either way on next request
     } finally {
       router.push('/auth/login');
     }
   };
 
-  const displayName = user.name || user.email.split('@')[0];
-  const initial = displayName.charAt(0).toUpperCase();
+  const displayName = user.name || displayNameFromEmail(user.email);
 
   return (
     <div ref={containerRef} className="relative">
-      {/* Popover Menu Anchored Above the Pill */}
       {isOpen && (
-        <div
-          role="menu"
-          aria-label="User Account Menu"
-          className="absolute bottom-full left-0 mb-2 w-64 rounded-xl bg-panel-elevated border border-border-subtle shadow-2xl py-2 z-50 animate-in fade-in slide-in-from-bottom-2 duration-150"
-        >
-          {/* Header */}
-          <div className="px-4 py-2.5 border-b border-border-subtle">
-            <div className="text-xs font-bold text-foreground truncate">
-              {displayName}
-            </div>
-            <div className="text-[11px] text-muted-foreground truncate font-mono">
-              {user.email}
-            </div>
-            <div className="mt-1.5 flex items-center gap-1.5">
-              <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-panel-inset text-accent border border-border-subtle">
-                <Shield className="w-3 h-3" />
-                {user.role}
-              </span>
-            </div>
+        <div role="menu" aria-label="Account" className="menu bottom-full left-0 right-0 mb-1.5">
+          <div className="border-b border-border px-2.5 pb-2 pt-1.5">
+            <p className="truncate text-sm font-medium text-fg">{displayName}</p>
+            <p className="truncate text-xs text-fg-muted">{user.email}</p>
           </div>
-
-          {/* Actions */}
           <div className="py-1">
-            <Link
-              href={`/orgs/${orgId}/profile`}
-              onClick={() => setIsOpen(false)}
-              className="flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-foreground hover:bg-panel hover:text-accent transition-colors"
-            >
-              <User className="w-4 h-4 text-muted-foreground" />
-              <span>Profile Settings</span>
+            <Link href={`/orgs/${orgId}/profile`} role="menuitem" onClick={() => setIsOpen(false)} className="menu-item">
+              <User aria-hidden="true" />
+              Profile
             </Link>
-
+            <Link href={`/orgs/${orgId}/settings`} role="menuitem" onClick={() => setIsOpen(false)} className="menu-item">
+              <Settings aria-hidden="true" />
+              Settings
+            </Link>
             <button
+              type="button"
+              role="menuitem"
               onClick={() => {
                 setIsOpen(false);
-                setIsSettingsDrawerOpen(true);
+                setIsShortcutsDialogOpen(true);
               }}
-              className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-foreground hover:bg-panel hover:text-accent transition-colors text-left"
+              className="menu-item"
             >
-              <Settings className="w-4 h-4 text-muted-foreground" />
-              <span>Preferences & Theme</span>
+              <Keyboard aria-hidden="true" />
+              Keyboard shortcuts
             </button>
           </div>
-
-          <div className="border-t border-border-subtle my-1" />
-
-          {/* Sign out */}
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-rose-400 hover:bg-rose-500/10 transition-colors text-left"
-          >
-            <LogOut className="w-4 h-4" />
-            <span>Sign Out</span>
+          <div className="menu-sep" />
+          <div className="menu-label">Theme</div>
+          {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
+            <button
+              key={value}
+              type="button"
+              role="menuitemradio"
+              aria-checked={theme === value}
+              onClick={() => setTheme(value)}
+              className="menu-item"
+            >
+              <Icon aria-hidden="true" />
+              <span className="flex-1">{label}</span>
+              {theme === value && <Check className="!text-accent-text" aria-hidden="true" />}
+            </button>
+          ))}
+          <div className="menu-sep" />
+          <button type="button" role="menuitem" onClick={handleLogout} className="menu-item">
+            <LogOut aria-hidden="true" />
+            Sign out
           </button>
         </div>
       )}
 
-      {/* User Pill Button (Bottom of Sidebar) */}
       <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
         aria-haspopup="menu"
         aria-expanded={isOpen}
-        className="w-full flex items-center justify-between p-2.5 rounded-xl bg-panel hover:bg-panel-elevated border border-border-subtle hover:border-border-strong transition-all text-left group"
+        className="flex w-full items-center gap-2.5 rounded-md p-1.5 text-left transition-colors hover:bg-surface-2"
       >
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-full bg-accent/20 border border-accent/40 flex items-center justify-center font-bold text-xs text-accent shrink-0">
-            {initial}
-          </div>
-          <div className="min-w-0">
-            <div className="text-xs font-semibold text-foreground truncate group-hover:text-accent transition-colors">
-              {displayName}
-            </div>
-            <div className="text-[11px] text-muted-foreground truncate font-mono">
-              {user.email}
-            </div>
-          </div>
-        </div>
-
-        <MoreVertical className="w-4 h-4 text-muted-foreground group-hover:text-foreground shrink-0 transition-colors" />
+        <Avatar name={displayName} size="md" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium text-fg">{displayName}</span>
+          <span className="block truncate text-xs text-fg-muted">{user.email}</span>
+        </span>
+        <ChevronsUpDown className="h-4 w-4 shrink-0 text-fg-subtle" aria-hidden="true" />
       </button>
     </div>
   );

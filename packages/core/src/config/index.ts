@@ -33,6 +33,12 @@ export const AppConfigSchema = z.object({
   AUTH_PROVIDER: z.enum(['supabase', 'cognito', 'mock']).default('mock'),
   SECRET_STORE_PROVIDER: z.enum(['in_memory', 'aws_secrets_manager']).default('in_memory'),
   ZOOM_CLIENT_PROVIDER: z.enum(['mock', 'http']).default('mock'),
+  // 'console' only logs emails (development); 'resend' sends them.
+  EMAIL_PROVIDER: z.enum(['resend', 'console']).default('console'),
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().default('Workspace <no-reply@localhost>'),
+  // Mentions, requests and digests; defaults to EMAIL_FROM. Use a separate subdomain in production.
+  EMAIL_FROM_NOTIFICATIONS: z.string().optional(),
 
   // Zoom Integration Settings
   ZOOM_CLIENT_ID: z.string().default('mock_zoom_client_id'),
@@ -47,6 +53,9 @@ export const AppConfigSchema = z.object({
   SUPABASE_ANON_KEY: z.string().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
+  // Unset = the adapter's current defaults (claude-haiku-5-5 / claude-sonnet-5-5); set to roll a tier back.
+  ANTHROPIC_FAST_MODEL: z.string().optional(),
+  ANTHROPIC_STRONG_MODEL: z.string().optional(),
   VOYAGE_API_KEY: z.string().optional(),
   VOYAGE_MODEL: z.string().default('voyage-3-lite'),
 

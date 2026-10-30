@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { trapTabKey } from './dialog';
 
@@ -10,6 +11,8 @@ interface DrawerProps {
   title: string;
   description?: string;
   children: React.ReactNode;
+  /** Pinned below the scrolling body (primary actions). */
+  footer?: React.ReactNode;
   widthClass?: string;
 }
 
@@ -19,18 +22,24 @@ export function Drawer({
   title,
   description,
   children,
+  footer,
   widthClass = 'max-w-md w-full',
 }: DrawerProps) {
   const drawerRef = useRef<HTMLDivElement>(null);
   const previouslyFocusedElement = useRef<HTMLElement | null>(null);
+  const titleId = useId();
+  const descriptionId = useId();
   // Latest onClose without re-running the open effect (which would steal focus on every parent render).
   const onCloseRef = useRef(onClose);
   useEffect(() => {
     onCloseRef.current = onClose;
   });
+  // Rendered into <body> so a parent's layout (space-y margins, transforms) can't shift the fixed overlay.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && mounted) {
       previouslyFocusedElement.current = document.activeElement as HTMLElement;
       // Focus drawer on open
       const firstFocusable = drawerRef.current?.querySelector<HTMLElement>(
@@ -55,54 +64,45 @@ export function Drawer({
         previouslyFocusedElement.current?.focus();
       };
     }
-  }, [isOpen]);
+  }, [isOpen, mounted]);
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
-  return (
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
-      aria-labelledby="drawer-title"
-      aria-describedby={description ? 'drawer-description' : undefined}
+      aria-labelledby={titleId}
+      aria-describedby={description ? descriptionId : undefined}
       className="fixed inset-0 z-50 flex justify-end"
     >
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
-        onClick={onClose}
-        aria-hidden="true"
-      />
+      <div className="fixed inset-0 animate-fade-in bg-overlay/40" onClick={onClose} aria-hidden="true" />
 
-      {/* Slide-out Panel */}
+      {/* Full screen on phones, side panel from sm up. */}
       <div
         ref={drawerRef}
-        className={`relative z-10 flex flex-col h-full bg-panel border-l border-border-subtle shadow-2xl transition-transform duration-200 ease-out ${widthClass}`}
+        className={`relative z-10 flex h-full animate-slide-in-right flex-col border-l border-border bg-surface shadow-2xl ${widthClass}`}
       >
-        {/* Header */}
-        <div className="flex items-start justify-between p-5 border-b border-border-subtle">
-          <div>
-            <h2 id="drawer-title" className="text-lg font-bold text-foreground">
+        <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
+          <div className="min-w-0">
+            <h2 id={titleId} className="truncate text-base font-semibold text-fg">
               {title}
             </h2>
             {description && (
-              <p id="drawer-description" className="text-xs text-muted-foreground mt-1">
+              <p id={descriptionId} className="mt-0.5 text-sm text-fg-muted">
                 {description}
               </p>
             )}
           </div>
-          <button
-            onClick={onClose}
-            aria-label="Close drawer"
-            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-panel-elevated transition-colors"
-          >
-            <X className="w-5 h-5" />
+          <button type="button" onClick={onClose} aria-label="Close panel" className="btn btn-ghost btn-icon btn-sm -mr-1.5">
+            <X aria-hidden="true" />
           </button>
         </div>
 
-        {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">{children}</div>
+        <div className="flex-1 space-y-5 overflow-y-auto p-5">{children}</div>
+        {footer && <div className="flex items-center gap-2 border-t border-border bg-surface px-5 py-3">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

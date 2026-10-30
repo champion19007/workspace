@@ -501,7 +501,11 @@ BEGIN
   END IF;
 END $$;
 
-GRANT CONNECT ON DATABASE workspace_dev TO workspace_app;
+-- Whatever the database is called (hosted Postgres names it e.g. "postgres", not workspace_dev).
+DO $$
+BEGIN
+  EXECUTE format('GRANT CONNECT ON DATABASE %I TO workspace_app', current_database());
+END $$;
 GRANT USAGE ON SCHEMA public TO workspace_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO workspace_app;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO workspace_app;

@@ -3,6 +3,7 @@ import { InMemoryQueueAdapter, PgBossQueueAdapter, SqsQueueAdapter } from './que
 import { InMemoryRealtimeAdapter, SupabaseRealtimeAdapter, AppSyncRealtimeAdapter } from './realtime/index.js';
 import { MockLlmAdapter, AnthropicLlmAdapter, BedrockLlmAdapter } from './llm/index.js';
 import { InMemoryBlobStoreAdapter, SupabaseBlobStoreAdapter, S3BlobStoreAdapter } from './blob-store/index.js';
+import { ConsoleEmailAdapter, ResendEmailAdapter } from './email/index.js';
 import { MockAuthAdapter, SupabaseAuthAdapter, CognitoAuthAdapter } from './auth/index.js';
 import { InMemorySecretStoreAdapter, AwsSecretsManagerAdapter } from './secret-store/index.js';
 import { MockZoomClientAdapter, HttpZoomClientAdapter } from './zoom/index.js';
@@ -58,6 +59,8 @@ export function createAppPorts(config: AppConfig): AppPorts {
     case 'anthropic':
       llm = new AnthropicLlmAdapter({
         apiKey: config.ANTHROPIC_API_KEY,
+        fastModel: config.ANTHROPIC_FAST_MODEL,
+        strongModel: config.ANTHROPIC_STRONG_MODEL,
         voyageApiKey: config.VOYAGE_API_KEY,
         voyageModel: config.VOYAGE_MODEL,
       });
@@ -148,5 +151,22 @@ export function createAppPorts(config: AppConfig): AppPorts {
       throw new AdapterUnavailableError('ZoomClient', config.ZOOM_CLIENT_PROVIDER, 'Unsupported zoom client provider');
   }
 
-  return { queue, realtime, llm, blobStore, auth, secretStore, zoomClient };
+  // 8. Email Port
+  let email;
+  switch (config.EMAIL_PROVIDER) {
+    case 'console':
+      email = new ConsoleEmailAdapter();
+      break;
+    case 'resend':
+      email = new ResendEmailAdapter({
+        apiKey: config.RESEND_API_KEY,
+        from: config.EMAIL_FROM,
+        notificationsFrom: config.EMAIL_FROM_NOTIFICATIONS ?? config.EMAIL_FROM,
+      });
+      break;
+    default:
+      throw new AdapterUnavailableError('Email', config.EMAIL_PROVIDER, 'Unsupported email provider');
+  }
+
+  return { queue, realtime, llm, blobStore, auth, secretStore, zoomClient, email };
 }
